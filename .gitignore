@@ -10,3 +10,4 @@ node_modules/
 # chain data
 ledger/data/
 ledger/**/chaindata/
+.pytest_cache/

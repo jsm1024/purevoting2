@@ -1,0 +1,50 @@
+# PureVoting 2.0 — local stack. Copy .env.example to .env, fill in the <set> values, then: docker compose up --build
+# Week 1: database + Core. The other owners add their services (with a healthcheck) here; Seungmin merges them in the
+# bootstrap order of docs/system-design.md section 7 (#6): nodes → contract deploy → registry setup → staff accounts →
+# Core, Gateway, Rule Engine.
+services:
+  db:
+    image: postgres:16.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-purevoting}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env}
+      DB_CORE_PASSWORD: ${DB_CORE_PASSWORD:?set DB_CORE_PASSWORD in .env}   # read by core/db/init/00_roles.sh
+    # commit timestamps would let anyone with DB access pair token use and credential registration (threat-model S2)
+    command: ["postgres", "-c", "track_commit_timestamp=off"]
+    volumes:
+      - ./core/db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"   # local only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-purevoting}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  core:
+    build: ./core
+    environment:
+      DATABASE_URL: postgresql+psycopg://pv2_core:${DB_CORE_PASSWORD}@db:5432/${POSTGRES_DB:-purevoting}
+      GATEWAY_URL: http://ledger-gateway:${GATEWAY_PORT:-8100}
+      CORE_KEY: ${CORE_KEY:-}
+      RULE_KEY: ${RULE_KEY:-}
+      AGENT_KEY: ${AGENT_KEY:-}
+      GATEWAY_KEY: ${GATEWAY_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      CHAIN_ID: ${CHAIN_ID:-}
+      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}
+      PINNED_NODE_URL: ${PINNED_NODE_URL:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CORE_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

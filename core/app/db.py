@@ -1,0 +1,25 @@
+"""Database engine. Every audit-relevant change and its outbox record go through one transaction:
+
+    with engine.begin() as conn:
+        ...   # change + outbox insert, committed together (README "Consistency model")
+"""
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
+from app.config import settings
+
+_engine: Engine | None = None
+
+
+def get_engine() -> Engine:
+    global _engine
+    if _engine is None:
+        if not settings.database_url:
+            raise RuntimeError("DATABASE_URL is not set")
+        _engine = create_engine(settings.database_url, pool_pre_ping=True)
+    return _engine
+
+
+def ping() -> bool:
+    with get_engine().connect() as conn:
+        return conn.execute(text("SELECT 1")).scalar() == 1

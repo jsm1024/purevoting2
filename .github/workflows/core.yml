@@ -1,0 +1,54 @@
+name: core
+
+on:
+  push:
+    paths: ["core/**", "tests/vectors/**", ".github/workflows/core.yml"]
+  pull_request:
+    paths: ["core/**", "tests/vectors/**", ".github/workflows/core.yml"]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q          # includes the 39 shared hash vectors
+
+  db:
+    # executes the init scripts and the smoke test on a real PostgreSQL 16
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_PASSWORD: ci-superuser
+          POSTGRES_DB: purevoting
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_DB: purevoting
+      DB_CORE_PASSWORD: ci-core
+    steps:
+      - uses: actions/checkout@v4
+      - name: roles (00_roles.sh)
+        env:
+          PGPASSWORD: ci-superuser
+        run: bash core/db/init/00_roles.sh
+      - name: schema (10_schema.sql)
+        env:
+          PGPASSWORD: ci-superuser
+        run: psql -v ON_ERROR_STOP=1 -U postgres -d purevoting -f core/db/init/10_schema.sql
+      - name: smoke test as pv2_core
+        env:
+          PGPASSWORD: ci-core
+        run: psql -v ON_ERROR_STOP=1 -U pv2_core -d purevoting -f core/db/tests/smoke.sql
