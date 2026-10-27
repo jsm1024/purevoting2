@@ -23,7 +23,9 @@ services:
       retries: 20
 
   core:
-    build: ./core
+    build:
+      context: .
+      dockerfile: core/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://pv2_core:${DB_CORE_PASSWORD}@db:5432/${POSTGRES_DB:-purevoting}
       GATEWAY_URL: http://ledger-gateway:${GATEWAY_PORT:-8100}
@@ -35,6 +37,8 @@ services:
       CHAIN_ID: ${CHAIN_ID:-}
       CONTRACT_ADDRESS: ${CONTRACT_ADDRESS:-}
       PINNED_NODE_URL: ${PINNED_NODE_URL:-}
+      CREATION_CHECK_MODE: ${CREATION_CHECK_MODE:-stub}   # dev stub until week 3 (role design); "node" for T01
+      VOTER_WEB_URL: ${VOTER_WEB_URL:-http://127.0.0.1:5173}
     depends_on:
       db:
         condition: service_healthy
@@ -45,6 +49,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # Stand-in Gateway for Core development before week 3 (no chain, no signature checks): docker compose --profile mock up
+  # Removed when Harits's ledger-gateway service is merged under the same name.
+  ledger-gateway:
+    profiles: ["mock"]
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    command: ["uvicorn", "devtools.fake_gateway:app", "--host", "0.0.0.0", "--port", "8100", "--no-access-log"]
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8100}:8100"
 
 volumes:
   pgdata:

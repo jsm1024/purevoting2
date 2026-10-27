@@ -2,9 +2,9 @@ name: core
 
 on:
   push:
-    paths: ["core/**", "tests/vectors/**", ".github/workflows/core.yml"]
+    paths: ["core/**", "contracts/**", "tests/vectors/**", ".github/workflows/core.yml"]
   pull_request:
-    paths: ["core/**", "tests/vectors/**", ".github/workflows/core.yml"]
+    paths: ["core/**", "contracts/**", "tests/vectors/**", ".github/workflows/core.yml"]
 
 jobs:
   unit:
@@ -52,3 +52,13 @@ jobs:
         env:
           PGPASSWORD: ci-core
         run: psql -v ON_ERROR_STOP=1 -U pv2_core -d purevoting -f core/db/tests/smoke.sql
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: week 2 flow against the real database (fake Gateway)
+        working-directory: core
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://pv2_core:ci-core@localhost:5432/purevoting
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -q tests/test_flow_db.py

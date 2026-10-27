@@ -2,6 +2,10 @@
 -- Every check raises an exception on failure, so psql -v ON_ERROR_STOP=1 exits non-zero.
 \set ON_ERROR_STOP 1
 
+-- everything runs in one transaction that is rolled back at the end: pv2_core cannot delete ballot rows, and the
+-- election written here (it has no status history) must not stay behind for later tests on the same database
+BEGIN;
+
 DO $$
 DECLARE
     e text := 'elc_' || repeat('0', 26);
@@ -10,9 +14,10 @@ DECLARE
 BEGIN
     INSERT INTO credential.elections (election_id, title, candidates, config_window_start, config_window_end,
         time_bucket_seconds, checkpoint_interval_seconds, organizations, approval_threshold, proposal_ttl_hours,
-        operator_org, public_key, private_key, config_hash)
+        operator_org, public_key, private_key, public_key_hash, config_hash)
     VALUES (e, 'smoke', '[]', '2026-11-03T09:00:00Z', '2026-11-03T10:00:00Z', 60, 60, '[]', 2, 24,
-        'org_commission', decode(repeat('00', 32), 'hex'), decode(repeat('11', 32), 'hex'), repeat('c', 64));
+        'org_commission', decode(repeat('00', 32), 'hex'), decode(repeat('11', 32), 'hex'), repeat('d', 64),
+        repeat('c', 64));
 
     -- redeem path: register a credential through the SECURITY DEFINER function
     PERFORM ballot.register_nullifier(e, n, 1);
@@ -73,3 +78,5 @@ END;
 $$;
 
 SELECT 'smoke ok' AS result;
+
+ROLLBACK;

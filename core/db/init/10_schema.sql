@@ -31,9 +31,16 @@ CREATE TABLE credential.elections (
     operator_org                text NOT NULL,               -- from the on-chain registry, never from the login
     public_key                  bytea NOT NULL CHECK (octet_length(public_key) = 32),   -- X25519 (D-08)
     private_key                 bytea NOT NULL CHECK (octet_length(private_key) = 32),  -- revealed from TALLY (D-23)
+    public_key_hash             char(64) NOT NULL,
     config_hash                 char(64) NOT NULL,
     creation_check              text NOT NULL DEFAULT 'PENDING' CHECK (creation_check IN ('PENDING', 'PASSED', 'MISMATCH')),
+    created_block               bigint,                      -- block_number of the accepted ELECTION_CREATED (creation check)
     open_checkpoint             bigint NOT NULL DEFAULT 0,
+    open_at                     timestamptz,                 -- boundary at which the scheduler opens (set when every voter has a token)
+    open_event_id               text,                        -- ELECTION_OPENED waiting for ACCEPTED (permissive transition)
+    opened_at                   timestamptz,                 -- ELECTION_OPENED.occurred_at; PERIODIC checkpoints count from it
+    fifo_stopped                boolean NOT NULL DEFAULT false,
+    ledger_rejected             boolean NOT NULL DEFAULT false,   -- ELECTION_CREATED rejected: deletable
     created_at                  timestamptz NOT NULL DEFAULT now()     -- system data, not a voter row
 );
 
@@ -121,6 +128,7 @@ CREATE TABLE credential.outbox (
     status         text NOT NULL DEFAULT 'PENDING'
                    CHECK (status IN ('PENDING', 'ACCEPTED', 'DUPLICATE', 'REJECTED', 'CONFLICT')),
     reject_code    text,
+    block_number   bigint,                                   -- system events: block including the transaction
     UNIQUE (election_id, seq),
     CHECK ((kind = 'system') = (seq IS NOT NULL))
 );
@@ -135,6 +143,42 @@ CREATE TABLE credential.checkpoints (
     tables          jsonb NOT NULL,                          -- snapshot hash + count of each of the six tables
     event_id        text NOT NULL,
     PRIMARY KEY (election_id, checkpoint)
+);
+
+-- Finding bodies stored by the Rule Engine (POST /internal/v1/findings) once their FINDING_RECORDED exists.
+CREATE TABLE credential.findings (
+    finding_id         text PRIMARY KEY CHECK (finding_id ~ '^fnd_[0-9A-HJKMNP-TV-Z]{26}$'),
+    election_id        text NOT NULL REFERENCES credential.elections ON DELETE CASCADE,
+    body               jsonb NOT NULL,                       -- FindingSubmission exactly as received
+    finding_hash       char(64) NOT NULL,                    -- Hc(body) = FINDING_RECORDED.finding_hash
+    recorded_event_id  text NOT NULL,
+    review_status      text NOT NULL CHECK (review_status IN ('NOT_REQUIRED', 'PENDING', 'RESOLVED', 'SUPERSEDED', 'CONFIRMED_ISSUE')),
+    evidence_status    text NOT NULL DEFAULT 'PENDING' CHECK (evidence_status IN ('OK', 'UNRESOLVED', 'PENDING')),
+    stored_at          timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX findings_election ON credential.findings (election_id);
+
+-- Alerts from the Rule Engine, the Gateway and Core itself. Idempotent by (election_id, checkpoint, kind, source).
+CREATE TABLE credential.audit_alerts (
+    election_id  text NOT NULL REFERENCES credential.elections ON DELETE CASCADE,
+    checkpoint   bigint NOT NULL,
+    kind         text NOT NULL,
+    source       text NOT NULL CHECK (source IN ('rule-engine', 'ledger-gateway', 'core-api')),
+    raised_at    timestamptz NOT NULL,
+    detail       text,
+    PRIMARY KEY (election_id, checkpoint, kind, source)
+);
+
+-- Idempotency-Key records of staff create endpoints (core-api IdempotencyKey: same key + same body → original response).
+-- For tokens:issue only the key and body hash are kept (the CSV holds raw tokens and lives 15 min in memory only);
+-- a retry after the CSV is gone gets 409 even across a Core restart.
+CREATE TABLE credential.idempotency (
+    scope       text NOT NULL,                               -- e.g. create:<user_id>, issue:<election_id>
+    key         text NOT NULL,
+    body_hash   char(64) NOT NULL,
+    response    jsonb,
+    created_at  timestamptz NOT NULL,
+    PRIMARY KEY (scope, key)
 );
 
 -- Staff accounts, created by the deployment setup script (no account API, threat-model O1).

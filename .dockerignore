@@ -1,0 +1,12 @@
+# build context is the repository root (core/Dockerfile); keep secrets and local data out of images
+.git
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/.pytest_cache
+**/node_modules
+*.pem
+*.key
+docs
+tests

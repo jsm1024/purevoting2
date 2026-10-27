@@ -16,7 +16,8 @@ def get_engine() -> Engine:
     if _engine is None:
         if not settings.database_url:
             raise RuntimeError("DATABASE_URL is not set")
-        _engine = create_engine(settings.database_url, pool_pre_ping=True)
+        # hide_parameters: DB errors must not copy token / nullifier hashes or evr_ IDs into logs (README "PII")
+        _engine = create_engine(settings.database_url, pool_pre_ping=True, hide_parameters=True)
     return _engine
 
 
