@@ -4,6 +4,7 @@
 import { H, receiptHash } from "../crypto/hashing";
 import {
   ApiError,
+  type AuditAlert,
   type BallotReceipt,
   type Election,
   type ElectionCreate,
@@ -12,6 +13,7 @@ import {
   type PublicElection,
   type RosterSummary,
   type RosterVoter,
+  type ShareStatus,
   type Tally,
   type VoterInput,
 } from "./types";
@@ -212,7 +214,11 @@ export function issuePending(id: string): boolean {
   return !!saved?.pending && Date.now() - saved.at < 14 * 60_000;
 }
 
-type StoredFinding = { finding_id: string; rule_id: Finding["rule_id"]; result: Finding["result"]; checkpoint: number; summary: string; inconclusive_reason?: string; review: { status: string } };
+type StoredFinding = {
+  finding_id: string; rule_id: Finding["rule_id"]; result: Finding["result"]; checkpoint: number; summary: string;
+  inconclusive_reason?: string; review: { status: string }; observed?: Record<string, unknown>;
+  evidence_refs?: { ref: string; kind: string }[];
+};
 export async function listFindings(id: string): Promise<Finding[]> {
   const { items } = await call<{ items: StoredFinding[] }>("GET", `/v1/elections/${enc(id)}/findings`, { auth: true });
   return items.map((f) => ({
@@ -224,7 +230,22 @@ export async function listFindings(id: string): Promise<Finding[]> {
     inconclusive_reason: f.inconclusive_reason,
     reviewed: ["RESOLVED", "SUPERSEDED", "NOT_REQUIRED"].includes(f.review?.status),
     confirmed_issue: f.review?.status === "CONFIRMED_ISSUE", // reviewed, and it blocks finalization
+    observed: f.observed,
+    evidence_refs: f.evidence_refs,
   }));
+}
+
+export async function listAlerts(id: string): Promise<AuditAlert[]> {
+  const { items } = await call<{ items: AuditAlert[] }>("GET", `/v1/elections/${enc(id)}/audit-alerts`, { auth: true });
+  return items;
+}
+
+/** public, no login: the same endpoint the organizations' trustee tool reads (it also carries every ballot, so poll
+ * it slowly) */
+export async function shareStatus(id: string): Promise<ShareStatus> {
+  const t = await call<{ trustee_keys: { org_id: string }[]; missing_shares: string[]; valid_ballots: number }>(
+    "GET", `/v1/public/elections/${enc(id)}/tally-input`);
+  return { orgs: t.trustee_keys.map((k) => k.org_id), missing: t.missing_shares, valid_ballots: t.valid_ballots };
 }
 
 const notYet = (what: string) => async (_id: string): Promise<never> => {

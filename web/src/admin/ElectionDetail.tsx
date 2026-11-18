@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
-import type { Election, ElectionStatus, Finding, Tally } from "../api/types";
+import type { AuditAlert, Election, ElectionStatus, Finding, ShareStatus, Tally } from "../api/types";
 import { Button, Card, ResultBadge, Spinner, StatusBadge, fmtDate } from "../ui";
-import { RULE_NAME, findingKo } from "./findingText";
+import { ALERT_KO, ALERT_SOURCE_KO, EVIDENCE_KIND_KO, ORG_KO, RULE_NAME, findingKo, observedKo, resolvesItself } from "./findingText";
 import { LinkDeliveryCard, RosterCard } from "./RosterSteps";
 
 const FLOW: [ElectionStatus, string][] = [
@@ -20,19 +20,32 @@ export default function ElectionDetail() {
   const [e, setE] = useState<Election>();
   const [findings, setFindings] = useState<Finding[]>([]);
   const [tally, setTally] = useState<Tally>();
+  const [alerts, setAlerts] = useState<AuditAlert[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string }>();
 
   const load = useCallback(async () => {
-    const [el, fs, t] = await Promise.all([api.getElection(electionId), api.listFindings(electionId), api.getTally(electionId)]);
+    const [el, fs, t, al] = await Promise.all([
+      api.getElection(electionId), api.listFindings(electionId), api.getTally(electionId),
+      api.listAlerts(electionId).catch(() => [] as AuditAlert[]),   // alerts are extra: never block the page
+    ]);
     setE(el);
     setFindings(fs);
     setTally(t);
+    setAlerts(al);
   }, [electionId]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // findings and alerts arrive with each checkpoint (about a minute apart): refresh while the election is running
+  const live = e?.status === "OPEN" || e?.status === "CLOSED" || e?.status === "TALLIED";
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => load().catch(() => undefined), 15_000);
+    return () => clearInterval(t);
+  }, [live, load]);
 
   // the creation check (Core reads the pinned node) finishes on its own; refresh until it does
   const pending = e?.creation_check === "PENDING";
@@ -178,6 +191,8 @@ export default function ElectionDetail() {
         </Card>
       )}
 
+      {alerts.length > 0 && <AlertsCard alerts={alerts} findings={findings} />}
+
       {/* rule engine findings */}
       <Card className="mt-4 overflow-hidden">
         <div className="flex items-baseline justify-between p-6 pb-4">
@@ -278,6 +293,8 @@ function FindingRow({ f, note }: { f: Finding; note: string }) {
 
 function FindingText({ f }: { f: Finding }) {
   const { text, missing } = findingKo(f);
+  const found = f.result === "FAIL" ? observedKo(f) : [];
+  const refs = f.result === "FAIL" ? f.evidence_refs ?? [] : [];
   return (
     <>
       {text}
@@ -285,6 +302,29 @@ function FindingText({ f }: { f: Finding }) {
         <ul className="mt-1 list-disc pl-5 text-[13px] text-ink-3">
           {missing.map((m) => <li key={m}>{m}</li>)}
         </ul>
+      )}
+      {found.length > 0 && (
+        <ul className="mt-2 space-y-1 text-[13px]">
+          {found.map((o) => (
+            <li key={o.key} className="font-semibold text-danger">
+              • {o.text}
+              {o.count !== undefined && <span className="ml-1">({o.count}건)</span>}
+              <span className="mono ml-2 text-[11px] font-normal text-ink-4">{o.key}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {refs.length > 0 && (
+        <details className="mt-1 text-[12px] text-ink-3">
+          <summary className="cursor-pointer font-semibold">근거 기록 {refs.length}건 보기</summary>
+          <ul className="mt-1 space-y-0.5">
+            {refs.map((r) => (
+              <li key={`${r.kind}:${r.ref}`}>
+                {EVIDENCE_KIND_KO[r.kind] ?? r.kind} <span className="mono break-all text-ink-4">{r.ref}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       <details className="mt-1 text-[12px] text-ink-4">
         <summary className="cursor-pointer">원문 (규칙 엔진이 서명한 영어 문장)</summary>
@@ -351,7 +391,9 @@ function NextAction({ e, busy, run }: { e: Election; busy: boolean; run: (fn: ()
               ? "세 기관이 각자 trustee 도구로 복호화 조각을 보낸 뒤 개표해요. 후보별 합계만 열리고, 표 한 장 한 장은 누구도 열 수 없어요."
               : "선거 키를 공개하고 개표해요. 결과는 블록체인에 기록돼요."}
           </p>
-          {api.capabilities.tally ? (
+          {e.ballot_scheme === "ELGAMAL_ED25519_V1" && api.capabilities.tally ? (
+            <DecryptionProgress id={id} busy={busy} run={run} />
+          ) : api.capabilities.tally ? (
             <Button className="w-full" disabled={busy} onClick={() => run(() => api.tally(id), "개표를 마쳤어요")}>
               개표하기
             </Button>
@@ -385,6 +427,114 @@ function Metric({ label, value, highlight }: { label: string; value: number; hig
     <div className={`rounded-xl p-4 ${highlight ? "bg-primary-soft" : "bg-surface"}`}>
       <div className="text-[13px] text-ink-3">{label}</div>
       <div className={`mt-1 text-[22px] font-bold ${highlight ? "text-primary" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+/** core-api AuditAlert: what the Rule Engine, the Gateway or Core reported instead of (or besides) a finding. Shown,
+ * never reviewed, never blocking finalization. A delay or an unreachable ledger clears by itself: "the rules for that
+ * checkpoint (or a later one) run when the ledger catches up" (core-api raiseAuditAlert), so such an alert counts as
+ * resolved once a finding exists at that checkpoint or a later one. Every other kind stays shown as raised. */
+function AlertsCard({ alerts, findings }: { alerts: AuditAlert[]; findings: Finding[] }) {
+  const audited = findings.reduce((m, f) => Math.max(m, f.checkpoint), -1);
+  // A Rule Engine alert is about a checkpoint it could not audit yet: a finding there or later is the catch-up. Core's
+  // own LEDGER_UNAVAILABLE (Gateway compare) needs a strictly later finding; the creation check's is raised at
+  // checkpoint 0, and any finding means the election opened, so the check passed.
+  const resolved = (a: AuditAlert) =>
+    resolvesItself(a.kind) && (a.source !== "core-api" || a.checkpoint === 0 ? audited >= a.checkpoint : audited > a.checkpoint);
+  const sorted = [...alerts].sort((a, b) => b.raised_at.localeCompare(a.raised_at));
+  const open = sorted.filter((a) => !resolved(a));
+  const done = sorted.filter(resolved);
+  const row = (a: AuditAlert, i: number) => (
+    <li key={`${i}:${a.kind}:${a.checkpoint}`} className="flex flex-wrap items-baseline gap-x-2">
+      <span className="font-semibold">체크포인트 {a.checkpoint}</span>
+      <span>{ALERT_KO[a.kind] ?? a.kind}</span>
+      {resolved(a) && <span className="text-[12px] font-semibold text-ok">✓ 해소됨</span>}
+      <span className="text-[12px] text-ink-4">
+        {ALERT_SOURCE_KO[a.source ?? ""] ?? a.source ?? ""} · {fmtDate(a.raised_at)}
+      </span>
+    </li>
+  );
+  const doneList = (
+    <ul className="mt-1.5 space-y-1.5 text-[13px] text-ink-3">{done.map((a, i) => row(a, i + open.length))}</ul>
+  );
+  if (open.length === 0)
+    return (
+      <Card className="mt-4 px-5 py-3">
+        <details>
+          <summary className="cursor-pointer text-[13px] font-semibold text-ink-3">
+            감사 지연 기록 {done.length}건 <span className="text-ok">(모두 해소됨)</span>
+          </summary>
+          <p className="mt-1 text-[12px] text-ink-4">
+            원장 확정을 기다리느라 잠깐 늦었던 검사예요. 그 뒤 해당 체크포인트(또는 이후)를 검사했어요. 결과는 아래 표에 있어요.
+          </p>
+          {doneList}
+        </details>
+      </Card>
+    );
+  return (
+    <Card className="mt-4 border border-warn/40 bg-warn-soft p-5">
+      <h2 className="text-[15px] font-bold text-warn">⚠ 감사 경보 {open.length}건</h2>
+      <p className="mt-1 text-[12px] text-ink-3">시스템이 스스로 알린 경보예요 (감사 지연, 연결, 원장 불일치 등). 검토가 필요 없고 결과 확정을 막지 않아요.</p>
+      <ul className="mt-3 space-y-1.5 text-[13px] text-ink-2">{open.map(row)}</ul>
+      {done.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[12px] font-semibold text-ink-3">해소된 기록 {done.length}건 보기</summary>
+          {doneList}
+        </details>
+      )}
+    </Card>
+  );
+}
+
+/** D-30: each organization sends its decryption share with its own trustee tool; the tally opens once every
+ * organization's share is in. Polls the public tally-input every 10 s (it carries the ballots, so not faster). */
+function DecryptionProgress({ id, busy, run }: { id: string; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void }) {
+  const [s, setS] = useState<ShareStatus>();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let stop = false;
+    const tick = () =>
+      api.shareStatus(id).then(
+        (v) => { if (!stop) { setS(v); setFailed(false); } },
+        () => { if (!stop) { setFailed(true); setS(undefined); } },
+      );
+    tick();
+    const t = setInterval(tick, 10_000);
+    return () => { stop = true; clearInterval(t); };
+  }, [id]);
+
+  const nothing = s !== undefined && s.valid_ballots === 0;   // no valid ballot: nothing to decrypt, the tally runs at once
+  const done = s ? s.orgs.length - s.missing.length : 0;
+  const ready = nothing || (s !== undefined && s.missing.length === 0);
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl bg-surface p-3">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[14px] font-bold">기관 복호화</span>
+          {s && !nothing && <span className="text-[14px] font-bold text-primary">{done} / {s.orgs.length}</span>}
+        </div>
+        {!s && !failed && <p className="mt-2 text-[13px] text-ink-4">진행 상황을 불러오는 중이에요…</p>}
+        {failed && <p className="mt-2 text-[13px] text-ink-4">진행 상황을 불러오지 못했어요. 개표하기를 누르면 남은 기관을 알려 줘요.</p>}
+        {nothing && <p className="mt-2 text-[13px] text-ink-3">유효한 표가 없어 복호화할 것이 없어요.</p>}
+        {s && !nothing && (
+          <ul className="mt-2 space-y-1 text-[13px]">
+            {s.orgs.map((o) => {
+              const sent = !s.missing.includes(o);
+              return (
+                <li key={o} className="flex justify-between">
+                  <span className="font-semibold">{ORG_KO[o] ?? o}</span>
+                  <span className={sent ? "font-semibold text-ok" : "text-ink-4"}>{sent ? "✓ 제출함" : "기다리는 중"}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <Button className="w-full" disabled={busy || (s !== undefined && !ready)} onClick={() => run(() => api.tally(id), "개표를 마쳤어요")}>
+        개표하기
+      </Button>
+      {s && !ready && <p className="text-[12px] text-ink-4">{s.orgs.length}개 기관이 모두 복호화 조각을 내면 개표할 수 있어요 (10초마다 갱신).</p>}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 // contracts/core-api.openapi.yaml so the real client can replace this file without touching the screens.
 import {
   ApiError,
+  type AuditAlert,
   type BallotReceipt,
   type Election,
   type ElectionCreate,
@@ -10,6 +11,7 @@ import {
   type PublicElection,
   type RosterSummary,
   type RosterVoter,
+  type ShareStatus,
   type Tally,
   type VoterInput,
 } from "./types";
@@ -88,7 +90,8 @@ const findings: Record<string, Finding[]> = {
     { finding_id: "f-1", rule_id: "R1", result: "PASS", checkpoint: 7, summary: "체인 이벤트 순서와 상태 전이가 일치합니다" },
     { finding_id: "f-2", rule_id: "R2", result: "PASS", checkpoint: 7, summary: "토큰 발급·사용 수가 명단과 일치합니다" },
     { finding_id: "f-3", rule_id: "R3", result: "PASS", checkpoint: 7, summary: "접수된 투표 수가 원장과 일치합니다" },
-    { finding_id: "f-4", rule_id: "R4", result: "FAIL", checkpoint: 7, summary: "명단 고정 이후 추가된 행 1건 (row_ledger_mismatches)" },
+    { finding_id: "f-4", rule_id: "R4", result: "FAIL", checkpoint: 7, summary: "명단 고정 이후 추가된 행 1건 (row_ledger_mismatches)",
+      observed: { roster_chain_breaks: 1, executed_actions: 0 }, evidence_refs: [{ ref: "evt_mock_roster", kind: "ledger_event" }] },
     { finding_id: "f-5", rule_id: "R5", result: "INCONCLUSIVE", checkpoint: 7, summary: "체크포인트 8이 아직 확정되지 않았습니다" },
   ],
   "el-2026-dorm": (["R1", "R2", "R3", "R4", "R5"] as const).map((r, i) => ({
@@ -312,4 +315,19 @@ export async function finalize(id: string): Promise<Election> {
 export async function listFindings(id: string): Promise<Finding[]> {
   await wait(200);
   return (findings[id] ?? []).map((f) => ({ ...f }));
+}
+
+const alerts: Record<string, AuditAlert[]> = {
+  "el-2026-student": [{ checkpoint: 8, source: "rule-engine", kind: "AUDIT_DELAYED", raised_at: "2026-11-18T03:10:00Z" }],
+};
+
+export async function listAlerts(id: string): Promise<AuditAlert[]> {
+  await wait(150);
+  return (alerts[id] ?? []).map((a) => ({ ...a }));
+}
+
+/** the mock tallies without shares; this only lets the screen show the progress card */
+export async function shareStatus(_id: string): Promise<ShareStatus> {
+  await wait(150);
+  return { orgs: ["org_commission", "org_neutral", "org_observer"], missing: ["org_observer"], valid_ballots: 1 };
 }

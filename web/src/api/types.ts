@@ -48,6 +48,25 @@ export interface Finding {
   inconclusive_reason?: string;
   reviewed?: boolean;
   confirmed_issue?: boolean;
+  /** the rule's observed values (contracts/README.md "Audit rules"); the screen shows the non-zero deciding ones */
+  observed?: Record<string, unknown>;
+  evidence_refs?: { ref: string; kind: string }[];
+}
+
+/** core-api AuditAlert: shown to staff, needs no review, never blocks finalization */
+export interface AuditAlert {
+  checkpoint: number;
+  source?: string;
+  kind: string;
+  raised_at: string;
+  detail?: string;
+}
+
+/** D-30 decryption progress, from the public tally-input (org_ids of the election's trustees, those still missing) */
+export interface ShareStatus {
+  orgs: string[];
+  missing: string[];
+  valid_ballots: number;
 }
 
 export interface Tally {
