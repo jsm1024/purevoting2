@@ -1,0 +1,32 @@
+{
+  "scenario": "T15a-aggregate",
+  "rules": {
+    "R1": "PASS",
+    "R2": "PASS",
+    "R3": "FAIL",
+    "R4": "PASS",
+    "R5": "FAIL"
+  },
+  "observed_nonzero": {
+    "R1": [],
+    "R2": [],
+    "R3": [
+      "ballots_received",
+      "credentials_issued",
+      "ledger_ballots",
+      "ledger_token_used",
+      "roster_active",
+      "tally_accepted_ballots",
+      "tally_ballot_count",
+      "tally_count_mismatches",
+      "tally_final_checkpoint",
+      "token_used",
+      "tokens_active"
+    ],
+    "R4": [],
+    "R5": [
+      "tally_share_failures"
+    ]
+  },
+  "cause_code": "DATA_TAMPERING"
+}
