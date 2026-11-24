@@ -5,6 +5,7 @@ import type { AuditAlert, Election, ElectionStatus, Finding, ShareStatus, Tally 
 import { Button, Card, ResultBadge, Spinner, StatusBadge, fmtDate } from "../ui";
 import { ALERT_KO, ALERT_SOURCE_KO, EVIDENCE_KIND_KO, ORG_KO, RULE_NAME, findingKo, observedKo, resolvesItself } from "./findingText";
 import { LinkDeliveryCard, RosterCard } from "./RosterSteps";
+import { TrusteeCard } from "./OrgPanels";
 
 const FLOW: [ElectionStatus, string][] = [
   ["DRAFT", "준비"],
@@ -17,7 +18,11 @@ const FLOW: [ElectionStatus, string][] = [
 
 export default function ElectionDetail() {
   const { electionId = "" } = useParams();
+  const account = api.currentAccount();
   const [e, setE] = useState<Election>();
+  // the operating organization's admin runs the election (Core: role admin AND org_id = operator_org); the other
+  // organizations watch, check and decrypt
+  const operator = account?.role === "admin" && (!e?.operator_org || account.org_id === e.operator_org);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [tally, setTally] = useState<Tally>();
   const [alerts, setAlerts] = useState<AuditAlert[]>([]);
@@ -129,7 +134,7 @@ export default function ElectionDetail() {
         <Card className="p-6 lg:col-span-1">
           <h2 className="text-[17px] font-bold">다음 단계</h2>
           <div className="mt-4">
-            <NextAction e={e} busy={busy} run={run} />
+            <NextAction e={e} busy={busy} run={run} operator={operator} />
           </div>
           {msg && <p className={`mt-4 rounded-xl p-3 text-[14px] ${msg.tone === "ok" ? "bg-ok-soft text-ok" : "bg-danger-soft text-danger"}`}>{msg.text}</p>}
         </Card>
@@ -152,8 +157,11 @@ export default function ElectionDetail() {
         </Card>
       </div>
 
-      {(e.status === "DRAFT" || e.status === "ROSTER_FROZEN") && <RosterCard e={e} onChange={load} />}
-      {(e.status === "ROSTER_FROZEN" || e.status === "OPEN") && <LinkDeliveryCard e={e} onChange={load} />}
+      {operator && (e.status === "DRAFT" || e.status === "ROSTER_FROZEN") && <RosterCard e={e} onChange={load} />}
+      {operator && (e.status === "ROSTER_FROZEN" || e.status === "OPEN") && <LinkDeliveryCard e={e} onChange={load} />}
+      {account && e.status === "CLOSED" && e.ballot_scheme === "ELGAMAL_ED25519_V1" && (
+        <TrusteeCard e={e} account={account} onSent={() => load().catch(() => undefined)} />
+      )}
 
       {showResults && (
         <Card className="mt-4 p-6">
@@ -334,8 +342,19 @@ function FindingText({ f }: { f: Finding }) {
   );
 }
 
-function NextAction({ e, busy, run }: { e: Election; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void }) {
+const WATCH: Partial<Record<ElectionStatus, string>> = {
+  DRAFT: "선관위가 명단을 올리고 확정하는 중이에요. 확정되면 명단 지문이 블록체인에 기록돼요.",
+  ROSTER_FROZEN: "명단이 확정됐어요. 선관위가 투표 링크를 발급하고, 시작 시각에 투표가 열려요.",
+  OPEN: "투표가 진행 중이에요. 아래 무결성 검사 결과가 체크포인트마다 갱신돼요.",
+  TALLIED: "개표가 끝났어요. 개표 체크포인트의 R1–R5 검사가 끝나면 선관위가 결과를 확정해요.",
+};
+
+function NextAction({ e, busy, run, operator }: { e: Election; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void; operator: boolean }) {
   const id = e.election_id;
+
+  // other organizations: what is happening, and on CLOSED the decryption progress (their own share is in the card below)
+  if (!operator && e.status !== "CLOSED" && e.status !== "FINALIZED" && e.status !== "VOIDED")
+    return <p className="text-[14px] text-ink-3">{WATCH[e.status]}</p>;
 
   switch (e.status) {
     case "DRAFT":
@@ -388,11 +407,13 @@ function NextAction({ e, busy, run }: { e: Election; busy: boolean; run: (fn: ()
         <div className="space-y-3">
           <p className="text-[14px] text-ink-3">
             {e.ballot_scheme === "ELGAMAL_ED25519_V1"
-              ? "세 기관이 각자 trustee 도구로 복호화 조각을 보낸 뒤 개표해요. 후보별 합계만 열리고, 표 한 장 한 장은 누구도 열 수 없어요."
+              ? "세 기관이 각자 자기 화면에서 복호화 조각을 보낸 뒤 개표해요. 후보별 합계만 열리고, 표 한 장 한 장은 누구도 열 수 없어요."
               : "선거 키를 공개하고 개표해요. 결과는 블록체인에 기록돼요."}
           </p>
           {e.ballot_scheme === "ELGAMAL_ED25519_V1" && api.capabilities.tally ? (
-            <DecryptionProgress id={id} busy={busy} run={run} />
+            <DecryptionProgress id={id} busy={busy} run={run} operator={operator} />
+          ) : api.capabilities.tally && !operator ? (
+            <p className="text-[13px] text-ink-3">선관위가 개표해요.</p>
           ) : api.capabilities.tally ? (
             <Button className="w-full" disabled={busy} onClick={() => run(() => api.tally(id), "개표를 마쳤어요")}>
               개표하기
@@ -489,7 +510,7 @@ function AlertsCard({ alerts, findings }: { alerts: AuditAlert[]; findings: Find
 
 /** D-30: each organization sends its decryption share with its own trustee tool; the tally opens once every
  * organization's share is in. Polls the public tally-input every 10 s (it carries the ballots, so not faster). */
-function DecryptionProgress({ id, busy, run }: { id: string; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void }) {
+function DecryptionProgress({ id, busy, run, operator }: { id: string; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => void; operator: boolean }) {
   const [s, setS] = useState<ShareStatus>();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -515,7 +536,7 @@ function DecryptionProgress({ id, busy, run }: { id: string; busy: boolean; run:
           {s && !nothing && <span className="text-[14px] font-bold text-primary">{done} / {s.orgs.length}</span>}
         </div>
         {!s && !failed && <p className="mt-2 text-[13px] text-ink-4">진행 상황을 불러오는 중이에요…</p>}
-        {failed && <p className="mt-2 text-[13px] text-ink-4">진행 상황을 불러오지 못했어요. 개표하기를 누르면 남은 기관을 알려 줘요.</p>}
+        {failed && <p className="mt-2 text-[13px] text-ink-4">{operator ? "진행 상황을 불러오지 못했어요. 개표하기를 누르면 남은 기관을 알려 줘요." : "진행 상황을 불러오지 못했어요. 잠시 뒤 다시 불러와요."}</p>}
         {nothing && <p className="mt-2 text-[13px] text-ink-3">유효한 표가 없어 복호화할 것이 없어요.</p>}
         {s && !nothing && (
           <ul className="mt-2 space-y-1 text-[13px]">
@@ -531,9 +552,13 @@ function DecryptionProgress({ id, busy, run }: { id: string; busy: boolean; run:
           </ul>
         )}
       </div>
-      <Button className="w-full" disabled={busy || (s !== undefined && !ready)} onClick={() => run(() => api.tally(id), "개표를 마쳤어요")}>
-        개표하기
-      </Button>
+      {operator ? (
+        <Button className="w-full" disabled={busy || (s !== undefined && !ready)} onClick={() => run(() => api.tally(id), "개표를 마쳤어요")}>
+          개표하기
+        </Button>
+      ) : (
+        <p className="text-[13px] text-ink-3">세 기관 조각이 모이면 선관위가 개표해요.</p>
+      )}
       {s && !ready && <p className="text-[12px] text-ink-4">{s.orgs.length}개 기관이 모두 복호화 조각을 내면 개표할 수 있어요 (10초마다 갱신).</p>}
     </div>
   );

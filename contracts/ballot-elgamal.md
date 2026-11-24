@@ -1,9 +1,10 @@
-# ElGamal ballots (D-30, contracts v1.2.0; R5 checks v1.2.2)
+# ElGamal ballots (D-30, contracts v1.2.0; R5 checks v1.2.2; web trustee v1.2.6)
 
 Scheme `ELGAMAL_ED25519_V1`. No party holds a key that opens a single ballot: each organization of the election keeps
 its own secret, the election key is the sum of their public keys, and only the per-candidate sums are decrypted, with
 one share per organization. Every ballot proves that it is one 1 and the rest 0 without showing which.
-Implementations: `core/app/elgamal.py` (Core, trustee tool) and `web/src/crypto/elgamal.ts` (browser); both must
+Implementations: `core/app/elgamal.py` (Core, trustee tool) and `web/src/crypto/elgamal.ts` (browser: ballots and,
+from v1.2.6, the organizations' web trustee `web/src/crypto/trusteeCheck.ts`); both must
 reproduce `tests/vectors/elgamal-vectors.json` (`tools/make_elgamal_vectors.py`). **Not audited cryptography.**
 
 Elections created before D-30, or with `BALLOT_SCHEME=SEALED_BOX_V1`, keep the libsodium sealed box of D-08.
@@ -66,6 +67,10 @@ z_1·G − c_1·A_j, z_1·Y − c_1·(B_j − G))`, and `c == Hs("sum", ctx…, 
    its secret); only then does it send its share: for each j, `D_j = x·A_j` with `w` random, `c = Hs("share", election_id, org_id,
    u16(j), X, A_j, D_j, w·G, w·A_j)`, `z = w + c·x` (`POST …/decryption-shares`, no login; Core verifies
    `c == Hs("share", …, z·G − c·X, z·A_j − c·D_j)` against `X` of that organization in the election).
+   The organization's web screen (v1.2.6, D-30 v1.7) runs the same checks in its browser with the key file read
+   locally: the record of that file must be among the election's trustee keys, the ledger comparison is mandatory
+   and there is no `--allow-unavailable`; its one-aggregate record is kept in that browser's localStorage, not next
+   to the secret, so an organization uses one browser (or the CLI) per election.
 3. With a verified share from every organization: `M_j = B_j − Σ_i D_ij = votes_j·G`, `votes_j` found by trying
    0 … number of valid ballots. TALLY_PUBLISHED is unchanged (results, counts, `ballot_set_root`, `result_hash`).
 4. From the TALLY checkpoint the election_config view carries `decryption_shares`, so the Rule Engine (R5) verifies
@@ -76,6 +81,8 @@ z_1·G − c_1·A_j, z_1·Y − c_1·(B_j − G))`, and `c == Hs("sum", ctx…, 
 - Nobody, the commission included, can open a ballot unless **every** organization of the election hands over its
   share for that ballot. The trustee tool decrypts only the sum of the ledger's accepted ballots, once per election
   (`--allow-unavailable N` lets up to N ballots without bytes drop out of that sum; a person decides it after checking why).
+  The web trustee's once-per-election record is weaker: it is lost with another browser, cleared site data or a
+  private window, after which a dishonest Core could obtain shares of two different sums.
 - This rests on the Gateway (the neutral organization) and Core (the commission) not colluding: the tool compares Core's
   list with the Gateway's stored events. Run with `--no-ledger-check`, a modified Core could pad the list with ballots
   it made itself and learn one voter's choice. A ballot Core stuffed during voting (an unused token's credential) is on

@@ -1,13 +1,17 @@
 // In-memory stand-in for Core (frontend stage). Function names match the operationIds of
 // contracts/core-api.openapi.yaml so the real client can replace this file without touching the screens.
+import type { LedgerView, TallyInput } from "../crypto/trusteeCheck";
+import type { Share } from "../crypto/elgamal";
 import {
   ApiError,
+  type Account,
   type AuditAlert,
   type BallotReceipt,
   type Election,
   type ElectionCreate,
   type Finding,
   type IssueResult,
+  type NodeStatus,
   type PublicElection,
   type RosterSummary,
   type RosterVoter,
@@ -179,6 +183,14 @@ export async function login(username: string, password: string) {
 }
 
 export const currentStaff = () => sessionStorage.getItem("pv_staff");
+/** mock: the username picks the organization (observer… → 참관, neutral… → 중립, anything else → 선관위 admin) */
+export function currentAccount(): Account | null {
+  const name = currentStaff();
+  if (!name) return null;
+  if (name.startsWith("observer")) return { name, role: "approver", org_id: "org_observer" };
+  if (name.startsWith("neutral")) return { name, role: "approver", org_id: "org_neutral" };
+  return { name, role: "admin", org_id: "org_commission" };
+}
 export const logout = () => sessionStorage.removeItem("pv_staff");
 
 export async function listElections(): Promise<Election[]> {
@@ -330,4 +342,26 @@ export async function listAlerts(id: string): Promise<AuditAlert[]> {
 export async function shareStatus(_id: string): Promise<ShareStatus> {
   await wait(150);
   return { orgs: ["org_commission", "org_neutral", "org_observer"], missing: ["org_observer"], valid_ballots: 1 };
+}
+
+const noTrustee = async (): Promise<never> => {
+  await wait(150);
+  throw new ApiError("NOT_IMPLEMENTED", "mock 모드에는 암호화된 표가 없어 복호화를 시험할 수 없어요. 실제 스택(:8443)에서 해 보세요.");
+};
+export const getTallyInput = (_id: string): Promise<TallyInput> => noTrustee();
+export const submitShare = (_id: string, _share: Share): Promise<{ org_id: string; missing_shares: string[] }> => noTrustee();
+export const ledgerView = (_id: string, _key: string, _k: number): Promise<LedgerView> => noTrustee();
+
+export const ledgerKey = () => sessionStorage.getItem("pv_ledger_key") ?? "";
+export const setLedgerKey = (key: string) => (key ? sessionStorage.setItem("pv_ledger_key", key) : sessionStorage.removeItem("pv_ledger_key"));
+
+export async function listNodes(key: string): Promise<NodeStatus[]> {
+  await wait(150);
+  if (!key) throw new ApiError("UNAUTHORIZED", "원장 읽기 키가 맞지 않아요.");
+  const h = 4200 + Math.floor(Date.now() / 1000) % 100;
+  return [
+    { node_id: "node-commission", org_id: "org_commission", reachable: true, block_number: h, peer_count: 2 },
+    { node_id: "node-observer", org_id: "org_observer", reachable: true, block_number: h, peer_count: 2 },
+    { node_id: "node-neutral", org_id: "org_neutral", reachable: true, block_number: h - 1, peer_count: 2 },
+  ];
 }

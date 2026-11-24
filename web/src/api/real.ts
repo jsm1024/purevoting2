@@ -2,14 +2,18 @@
 // change; ./index picks one at build time (VITE_API_MODE). Paths are same-origin: nginx (compose `web`, D-29) or the
 // Vite dev proxy forwards /v1/ to Core.
 import { H, receiptHash } from "../crypto/hashing";
+import type { LedgerView, TallyInput } from "../crypto/trusteeCheck";
+import type { Share } from "../crypto/elgamal";
 import {
   ApiError,
+  type Account,
   type AuditAlert,
   type BallotReceipt,
   type Election,
   type ElectionCreate,
   type Finding,
   type IssueResult,
+  type NodeStatus,
   type PublicElection,
   type RosterSummary,
   type RosterVoter,
@@ -45,7 +49,7 @@ const KO: Record<string, string> = {
 };
 
 const SESSION = "pv_staff_session";
-type Session = { token: string; name: string; expires: number };
+type Session = { token: string; name: string; expires: number; role?: Account["role"]; org_id?: string };
 
 function session(): Session | undefined {
   try {
@@ -150,8 +154,8 @@ export const getReceipt = (receipt_hash: string) => call<BallotReceipt>("GET", `
 export async function login(username: string, password: string) {
   if (!username || !password) throw new ApiError("UNAUTHORIZED", "아이디와 비밀번호를 입력하세요");
   try {
-    const r = await call<{ access_token: string; expires_in: number; user: { display_name: string } }>("POST", "/v1/auth/login", { body: { username, password } });
-    sessionStorage.setItem(SESSION, JSON.stringify({ token: r.access_token, name: r.user.display_name, expires: Date.now() + r.expires_in * 1000 }));
+    const r = await call<{ access_token: string; expires_in: number; user: { display_name: string; role: Account["role"]; org_id: string } }>("POST", "/v1/auth/login", { body: { username, password } });
+    sessionStorage.setItem(SESSION, JSON.stringify({ token: r.access_token, name: r.user.display_name, role: r.user.role, org_id: r.user.org_id, expires: Date.now() + r.expires_in * 1000 }));
     return { username: r.user.display_name };
   } catch (err) {
     if (err instanceof ApiError && err.code === "UNAUTHORIZED") throw new ApiError("UNAUTHORIZED", "아이디 또는 비밀번호가 맞지 않아요");
@@ -160,7 +164,16 @@ export async function login(username: string, password: string) {
 }
 
 export const currentStaff = () => session()?.name ?? null;
-export const logout = () => sessionStorage.removeItem(SESSION);
+/** role and organization only steer the screen; Core checks both on every staff call */
+export function currentAccount(): Account | null {
+  const s = session();
+  // a session saved before this field existed was an admin login (the only account then)
+  return s ? { name: s.name, role: s.role ?? "admin", org_id: s.org_id ?? "org_commission" } : null;
+}
+export const logout = () => {
+  sessionStorage.removeItem(SESSION);
+  sessionStorage.removeItem(LEDGER_KEY);
+};
 
 export const listElections = async () => (await call<{ items: Election[] }>("GET", "/v1/elections", { auth: true })).items;
 export const getElection = (id: string) => call<Election>("GET", `/v1/elections/${enc(id)}`, { auth: true });
@@ -285,3 +298,53 @@ export async function getTally(id: string): Promise<Tally | undefined> {
     throw err;
   }
 }
+
+// ───────────── organizations (D-30 trustee, ledger reads) ─────────────
+
+/** the whole public tally input (every ballot): read once per check, never polled */
+export const getTallyInput = (id: string) => call<TallyInput>("GET", `/v1/public/elections/${enc(id)}/tally-input`);
+
+/** POST the proven share; Core verifies it against this organization's key in the election */
+export const submitShare = (id: string, share: Share) =>
+  call<{ org_id: string; missing_shares: string[] }>("POST", `/v1/public/elections/${enc(id)}/decryption-shares`, { body: share });
+
+// The organization's read-only Gateway key (auditorKey) for this tab only: entered by hand or taken from the key file.
+// The web's /ledger/ entry forwards it to the Gateway, which refuses any request without a valid key.
+const LEDGER_KEY = "pv_ledger_key";
+export const ledgerKey = () => sessionStorage.getItem(LEDGER_KEY) ?? "";
+export const setLedgerKey = (key: string) => (key ? sessionStorage.setItem(LEDGER_KEY, key) : sessionStorage.removeItem(LEDGER_KEY));
+
+async function ledger<T>(path: string, key: string): Promise<T> {
+  try {
+    return await call<T>("GET", `/ledger${path}`, { headers: { "X-Service-Key": key } });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "UNAUTHORIZED") throw new ApiError(err.code, "원장 읽기 키가 맞지 않아요.");
+    if (err instanceof ApiError && /^HTTP_(404|502|503|504)$/.test(err.code)) throw new ApiError(err.code, "원장(Gateway)에 연결할 수 없어요.");
+    throw err;
+  }
+}
+
+/** the Gateway's stored (= ACCEPTED) BALLOT_RECEIVED events up to the final checkpoint and the key hash of
+ * ELECTION_CREATED, exactly as trustee.py ledger_view */
+export async function ledgerView(id: string, key: string, finalCheckpoint: number): Promise<LedgerView> {
+  const ballots = new Set<string>();
+  let pkh: string | null = null, cursor: string | undefined;
+  for (;;) {
+    const q = new URLSearchParams({ election_id: id, checkpoint_max: String(finalCheckpoint), limit: "500" });
+    q.append("type", "BALLOT_RECEIVED");
+    q.append("type", "ELECTION_CREATED");
+    if (cursor) q.set("cursor", cursor);
+    type Ev = { type: string; checkpoint?: number; payload: { nullifier_hash?: string; ballot_hash?: string; public_key_hash?: string } };
+    const page = await ledger<{ items: Ev[]; next_cursor?: string | null }>(`/v1/events?${q}`, key);
+    for (const ev of page.items) {
+      if (ev.type === "BALLOT_RECEIVED" && (ev.checkpoint ?? finalCheckpoint + 1) <= finalCheckpoint)
+        ballots.add(`${ev.payload.nullifier_hash}:${ev.payload.ballot_hash}`);
+      else if (ev.type === "ELECTION_CREATED") pkh = ev.payload.public_key_hash ?? null;
+    }
+    cursor = page.next_cursor ?? undefined;
+    if (!cursor) return { ballots, public_key_hash: pkh };
+  }
+}
+
+/** the three organizations' chain nodes as the Gateway sees them */
+export const listNodes = async (key: string) => (await ledger<{ items: NodeStatus[] }>("/v1/nodes", key)).items;

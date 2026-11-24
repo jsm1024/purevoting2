@@ -28,6 +28,10 @@
 > organizations, with validity proofs; only per-candidate sums are decrypted, one share per organization; no whole
 > private key exists (D-08 and D-23 kept for elections with `BALLOT_SCHEME=SEALED_BOX_V1`, the rollback setting).
 > Team-lead decision; the earlier implementation stays tagged `sealedbox-baseline`.
+> 2026-11-20 v1.7: D-29, D-30 — each organization signs in to the web with its own account and decrypts in its own browser
+> (same checks as the trustee tool; the key file is read locally and never uploaded); the public entry forwards two
+> Gateway read paths (`/ledger/v1/events`, `/ledger/v1/nodes`) with the caller's read-only key (the deployment's shared
+> `AUDITOR_KEY`). Team-lead decision.
 > History: drafts v0.1–v0.18 were revised after supervisor reviews 1–17; the Korean original with the full history is
 > `decisions.ko.md`. If the two differ, this English version applies (D-19).
 
@@ -64,7 +68,7 @@
 | D-27 | Confirmation depth | A chain item counts only in a block with ≥ D blocks on top (D = 2, *provisional*); pinned like the contract address | Harits, Seungmin, Anik | Confirmed (v1.1) |
 | D-28 | Schedule compression | Demo version 2026-11-19, everything finished by 2026-11-30; milestones M1–M3, per-owner dates, handoffs and fallbacks in `docs/schedule.md`; optional features not built; experiment reduced; mandatory scope unchanged | All | Confirmed (v1.2) |
 | D-30 | Ballot secrecy against the commission | Exponential ElGamal ballots (one 0/1 ciphertext per candidate with validity proofs) under the sum of the three organizations' keys; Core adds them up and only the per-candidate sums are decrypted, each organization sending a proven share; nobody holds a whole key; chain and contract unchanged | Seungmin | Confirmed (v1.6) |
-| D-29 | Public access | Stack stays on the demo PC; the compose `web` service (nginx: built web + Core `/v1/` only) is the only entry, published over HTTPS by a free **Tailscale Funnel** (team tests: Tailscale Serve); no cloud hosting | Seungmin | Confirmed (v1.3) |
+| D-29 | Public access | Stack stays on the demo PC; the compose `web` service (nginx: built web + Core `/v1/`; v1.7: + two Gateway read paths, D-30) is the only entry, published over HTTPS by a free **Tailscale Funnel** (team tests: Tailscale Serve); no cloud hosting | Seungmin | Confirmed (v1.3) |
 
 ---
 
@@ -424,7 +428,9 @@
     only Core's `/v1/` on the same origin (no CORS). `/internal/v1/*`, the API docs and the health endpoints return 404,
     and request paths containing `..` or encoded `.` / `/` / `\` are refused (400), so the raw URI forwarded to Core
     always starts with `/v1/`. Nothing else is reachable through the tunnel (the database, Core and Gateway ports stay
-    bound to 127.0.0.1). Bound to `127.0.0.1:${WEB_PORT}` (3000). No request log at the entry (exact times and receipt
+    bound to 127.0.0.1). v1.7 (D-30 organization screens): plus `GET /ledger/v1/events` and `GET /ledger/v1/nodes`,
+    forwarded to the Gateway with the caller's `X-Service-Key` (the real Gateway answers 401 without a valid one; the
+    mock profile's stand-in Gateway checks no key, so the Funnel stays off on a mock stack). Bound to `127.0.0.1:${WEB_PORT}` (3000). No request log at the entry (exact times and receipt
     paths would undo the bucketing, threat-model S1); a content security policy on the web pages.
   - **Rate caps at the entry:** the tunnel hands every request over from one local address, so the caps are for the
     whole site: login 30 / min; redeem, ballot and election reads 20 / s; receipt checks 30 / s in their own zone so
@@ -482,6 +488,25 @@
   - **Rollback:** `BALLOT_SCHEME=SEALED_BOX_V1` restores D-08 / D-23 for new elections; elections keep the scheme they
     were created with. The previous implementation is tagged `sealedbox-baseline`. An existing database needs
     `core/db/migrations/001_elgamal.sql` once (adds columns and tables, deletes nothing).
+- **Organization web screens (v1.7):**
+  - Staff accounts per organization, role `approver` as core-api.openapi.yaml already defines for staff of the other
+    organizations (`create_staff --org org_observer --role approver`, the same for org_neutral);
+    the screen follows the login's `org_id` and `role`, Core still checks every call. Only the operator admin sees
+    election creation, the roster, link delivery, the tally and finalize buttons.
+  - "우리 기관 복호화" card on a CLOSED ElGamal election (`web/src/admin/OrgPanels.tsx`,
+    `web/src/crypto/trusteeCheck.ts`): the organization picks its key file, which the browser reads and checks against
+    the public record in it; that record from the file (never Core's copy) is the one required among the election's
+    trustee keys, so a key Core swapped in is refused; the browser reads the tally input and the Gateway's events itself and runs exactly the
+    trustee tool's `check()` (ledger comparison mandatory; no `--allow-unavailable` in the web), then sends only the
+    proven share. One sum per election and organization is remembered in that browser's localStorage before the
+    share leaves (the CLI keeps its own file, so an organization uses one of the two per election). Shared vectors:
+    `web/tests/trustee.test.ts` reproduces Core's share bytes.
+  - The Gateway read key: the deployment's single read-only `AUDITOR_KEY` (shared by the organizations and invited
+    auditors), entered once per tab (sessionStorage) or carried as `gateway_auditor_key` in a web copy of the key file
+    (the demo writes that copy by adding the field to the trustee secret file; the CLI ignores it). nginx forwards only `GET /ledger/v1/events` and `GET /ledger/v1/nodes`, with that
+    header and without Core credentials, under a site-wide 5 r/s cap; the Gateway still answers 401 without a valid
+    key (threat model P1).
+  - The neutral organization's list page shows the three nodes (reachable, block height, peers) from `/v1/nodes`.
 - **Limits (stated in the report):**
   - The guarantee needs separate key holders. When one person runs all three trustees (the demo,
     `tools/trustees.sh`), that person can decrypt anything.
@@ -491,6 +516,13 @@
   - The browser still sees the choice before encrypting it, and the bucketed time link (S1) is unchanged.
   - The proofs are implemented here and not audited; only the group operations come from libsodium.
   - The ballot chunk of the voter web is about 1 MB (libsodium "sumo" build, loaded lazily).
+  - Web decryption (v1.7) trusts the page the organization loads: whoever serves the web (the commission's PC in the
+    demo) could serve a page that leaks the key file. Real separation needs each organization to serve or pin its
+    own copy of the web, or use the CLI tool; the demo also keeps all three key files on one PC.
+  - The web's one-sum record lives only in that browser's localStorage: another browser or PC, cleared site data or a
+    private window loses it, and then a dishonest Core could obtain shares of two different sums. The card says to use
+    one browser per election and no private window; the CLI's file record is the stronger protection.
+  - `/v1/nodes` also shows key holders the internal node RPC addresses.
 - **Affects:**
   - Contracts: `contracts/ballot-elgamal.md` (new), `contracts/core-api.openapi.yaml` (v1.2.0).
   - Core: `core/app/elgamal.py`, `elections.py`, `voting.py`, `tally.py`, `views.py`, `scripts/trustee.py`,

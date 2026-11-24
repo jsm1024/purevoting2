@@ -29,6 +29,8 @@ export interface Election extends PublicElection {
   voter_count: number;
   creation_check: "PENDING" | "PASSED" | "MISMATCH";
   open_checkpoint: number;
+  /** the organization that runs the election (on-chain registry); only its admins may run it */
+  operator_org?: string;
   counters: { as_of_checkpoint: number; tokens_active: number; tokens_used: number; ballots_received: number };
 }
 
@@ -126,4 +128,20 @@ export class ApiError extends Error {
   constructor(public code: string, message: string) {
     super(message);
   }
+}
+
+/** the signed-in staff account (core-api login `user`): the screen shows each organization's own tasks */
+export interface Account {
+  name: string;
+  role: "admin" | "approver" | "auditor";
+  org_id: string;
+}
+
+/** ledger-gateway.openapi.yaml GET /v1/nodes, read through the web's /ledger/ entry with a read-only Gateway key */
+export interface NodeStatus {
+  node_id: string;
+  org_id: string;
+  reachable: boolean;
+  block_number?: number;
+  peer_count?: number;
 }

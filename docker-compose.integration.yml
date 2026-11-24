@@ -184,6 +184,8 @@ services:
       AUDITOR_KEY: ${AUDITOR_KEY:-}
       GATEWAY_KEY: ${GATEWAY_KEY:?set GATEWAY_KEY}
       CORE_URL: http://core:8000
+      # GET /v1/nodes lists these (the neutral organization's web screen, D-30 v1.7); empty = only its own node
+      NODE_LIST: ${NODE_LIST:-node-commission=org_commission=http://node-commission:8545;node-observer=org_observer=http://node-observer:8545;node-neutral=org_neutral=http://node-neutral:8545}
     volumes:
       - ledger-gateway-data:/data
     depends_on:

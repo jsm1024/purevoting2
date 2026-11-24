@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import type { Election } from "../api/types";
 import { Button, Card, Spinner, StatusBadge, fmtDate } from "../ui";
+import { NodesCard, OrgTasksCard } from "./OrgPanels";
 
 function dDay(e: Election) {
   const ms = new Date(e.window_start).getTime() - Date.now();
@@ -12,7 +13,10 @@ function dDay(e: Election) {
 }
 
 export default function ElectionList() {
+  const account = api.currentAccount();
+  const operator = account?.role === "admin";
   const [items, setItems] = useState<Election[]>();
+  const [nodesOpen, setNodesOpen] = useState(false);
   useEffect(() => {
     api.listElections().then(setItems);
   }, []);
@@ -32,13 +36,20 @@ export default function ElectionList() {
     <>
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-[26px] font-bold">선거 관리</h1>
-          <p className="mt-1 text-[15px] text-ink-3">선거를 만들고, 진행 상황과 검사 결과를 확인하세요.</p>
+          <h1 className="text-[26px] font-bold">{operator ? "선거 관리" : "선거 목록"}</h1>
+          <p className="mt-1 text-[15px] text-ink-3">
+            {operator ? "선거를 만들고, 진행 상황과 검사 결과를 확인하세요." : "선거의 진행 상황과 검사 결과를 확인하고, 마감되면 우리 기관의 복호화 조각을 내세요."}
+          </p>
         </div>
-        <Link to="/admin/new">
-          <Button>+ 새 선거</Button>
-        </Link>
+        {operator && (
+          <Link to="/admin/new">
+            <Button>+ 새 선거</Button>
+          </Link>
+        )}
       </div>
+
+      {account && <OrgTasksCard account={account} />}
+      {account?.org_id === "org_neutral" && <NodesCard className="mt-4" />}
 
       {/* summary tiles (NEC quick-menu style) */}
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
@@ -46,6 +57,14 @@ export default function ElectionList() {
         <Tile icon="📝" label="준비 중인 선거" value={pending} />
         <Tile icon="📊" label="개표 완료" value={done} />
       </div>
+
+      {account?.org_id !== "org_neutral" && (
+        <details className="mt-4" onToggle={(ev) => setNodesOpen((ev.target as HTMLDetailsElement).open)}>
+          <summary className="cursor-pointer text-[13px] font-semibold text-ink-3">블록체인 노드 상태 보기</summary>
+          {/* mounted only while open, so a closed panel never polls */}
+          {nodesOpen && <NodesCard className="mt-2" />}
+        </details>
+      )}
 
       <div className="mt-8 space-y-3">
         {items.map((e) => {

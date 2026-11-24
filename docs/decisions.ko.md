@@ -29,6 +29,7 @@
 > v1.4 (2026-11-11): D-10 — 구간 크기 기준을 더는 강제하지 않음(명단이 작아도 투표할 수 있어야 함). 명단 확정 시 BUCKET_TOO_SMALL 거부 없음, 웹은 구간을 60초로 고정하고 선택지를 없앰. 남는 위험은 공개 한계로 둠(위협 모델 S1)
 > v1.5 (2026-11-11): D-11 예외 — 모든 유권자가 투표하면(모든 ACTIVE 유권자에게 토큰이 있고, 토큰 전부 사용, 모든 투표권에 표 있음, 마지막 구간 제외) 운영 기관 관리자가 제안 없이 종료 시각 전에 마감할 수 있음(ELECTION_CLOSED reason ALL_VOTED). 표를 잃는 유권자가 없음. R4가 조건을 다시 검사할 예정(아직 미구현, Anik). 팀장 결정
 > v1.6 (2026-11-12): D-30 추가 — 표를 세 기관 공동 키의 지수형 ElGamal 암호문(후보별 0/1, 유효성 증명 포함)으로 바꾸고, 후보별 합계만 기관마다 증명이 붙은 조각으로 복호화함. 통째의 개인키는 어디에도 없음. D-08·D-23은 `BALLOT_SCHEME=SEALED_BOX_V1`(되돌리기 설정)일 때만 적용. 팀장 결정. 이전 구현은 `sealedbox-baseline` 태그로 보관
+> v1.7 (2026-11-20): D-30 — 기관마다 자기 계정으로 웹에 로그인해 자기 브라우저에서 복호화함(trustee 도구와 같은 검사, 열쇠 파일은 브라우저 안에서만 읽고 올리지 않음). 공개 입구가 Gateway 읽기 경로 두 개(`/ledger/v1/events`, `/ledger/v1/nodes`)를 호출자의 읽기 전용 키 그대로 중계함. 팀장 결정
 
 ## 요약
 
@@ -63,7 +64,7 @@
 | D-27 | 확정 깊이 | 블록 위에 D개 이상 쌓인 블록의 체인 정보만 인정(D = 2, *잠정*). 계약 주소처럼 배포 설정에 고정 | Harits, 승민, Anik | 확정(v1.1) |
 | D-28 | 일정 압축 | 데모 버전 2026-11-19, 모든 작업은 2026-11-30까지. 단계 M1–M3, 담당별 날짜, 넘겨주는 항목, 대체안은 `docs/schedule.md`. 선택 기능은 만들지 않음, 실험 축소, 필수 범위는 그대로 | 전원 | 확정(v1.2) |
 | D-30 | 선관위에 대한 투표 비밀 | 지수형 ElGamal 표(후보별 0/1 암호문 + 유효성 증명)를 세 기관 키의 합으로 암호화. Core가 암호문인 채로 더하고, 후보별 합계만 기관마다 증명이 붙은 조각을 보내 복호화. 통째의 키를 가진 곳이 없음. 체인·계약은 그대로 | 승민 | 확정(v1.6) |
-| D-29 | 공개 접속 | 스택은 데모 PC에서 실행. compose `web` 서비스(nginx: 빌드된 웹 + Core `/v1/`만)가 유일한 입구이고, 무료 **Tailscale Funnel**로 HTTPS 공개(팀 시험은 Tailscale Serve). 클라우드 호스팅 안 함 | 승민 | 확정(v1.3) |
+| D-29 | 공개 접속 | 스택은 데모 PC에서 실행. compose `web` 서비스(nginx: 빌드된 웹 + Core `/v1/`. v1.7: Gateway 읽기 경로 2개 추가, D-30)가 유일한 입구이고, 무료 **Tailscale Funnel**로 HTTPS 공개(팀 시험은 Tailscale Serve). 클라우드 호스팅 안 함 | 승민 | 확정(v1.3) |
 
 ---
 
@@ -289,7 +290,7 @@
 - **배경**: 스택 전체가 데모 PC에서 모든 포트를 127.0.0.1에 묶고 돌아서, 다른 기기에서는 투표자·관리자 웹을 열 수 없었음. 다른 기기·다른 네트워크에서 비용 0으로 접속할 수 있어야 함
 - **결정**
   - 스택은 데모 PC(승민) 한 대에서 계속 실행. 클라우드 호스팅 안 함
-  - **공개 입구는 하나**: compose `web` 서비스(`web/Dockerfile`, `web/nginx.conf`)가 빌드된 웹을 서빙하고 Core의 `/v1/`만 같은 주소로 전달(CORS 불필요). `/internal/v1/*`, API 문서, 상태 확인 경로는 404이고, `..`나 인코딩된 `.`·`/`·`\`가 든 경로는 400으로 거부해서 Core로 넘어가는 원본 URI는 항상 `/v1/`로 시작함. 그 밖에는 터널로 아무것도 닿지 않음(DB·Core·Gateway 포트는 127.0.0.1에만 열림). `127.0.0.1:${WEB_PORT}`(3000)에 바인딩. 입구는 요청 로그를 남기지 않음(정확한 시각과 영수증 경로가 구간 묶음을 무력화함, threat-model S1). 웹 페이지에 CSP 적용
+  - **공개 입구는 하나**: compose `web` 서비스(`web/Dockerfile`, `web/nginx.conf`)가 빌드된 웹을 서빙하고 Core의 `/v1/`만 같은 주소로 전달(CORS 불필요). `/internal/v1/*`, API 문서, 상태 확인 경로는 404이고, `..`나 인코딩된 `.`·`/`·`\`가 든 경로는 400으로 거부해서 Core로 넘어가는 원본 URI는 항상 `/v1/`로 시작함. 그 밖에는 터널로 아무것도 닿지 않음(DB·Core·Gateway 포트는 127.0.0.1에만 열림). v1.7(D-30 기관 화면): `GET /ledger/v1/events`와 `GET /ledger/v1/nodes`만 호출자의 `X-Service-Key`를 그대로 붙여 Gateway로 전달함(실제 Gateway는 맞는 키가 없으면 401. mock 프로필의 가짜 Gateway는 키를 검사하지 않으므로 mock 스택에서는 Funnel을 켜지 않음). `127.0.0.1:${WEB_PORT}`(3000)에 바인딩. 입구는 요청 로그를 남기지 않음(정확한 시각과 영수증 경로가 구간 묶음을 무력화함, threat-model S1). 웹 페이지에 CSP 적용
   - **입구에서 요청 수 제한**: 터널은 모든 요청을 같은 로컬 주소에서 넘겨주므로 사이트 전체 기준: 로그인 분당 30회, redeem·투표 제출·선거 조회 초당 20회, 영수증 조회는 별도 구역 초당 30회라 폴링이 제출을 막지 않음(투표자 웹은 5초마다, 최대 15초까지 늘려 가며 폴링). 거부된 요청은 계약의 `429 RATE_LIMITED` problem 본문과 `Retry-After`를 받고 Core에 닿지 않았으므로 재시도해도 안전. Core 자체의 클라이언트별 `RATE_LIMITED`는 미구현이며 보고서에 한계로 적음. 외부의 반복 로그인 시도가 로컬 직원 로그인까지 막을 수 있음(대응: Funnel 끄기)
   - **공개 방법**: 데모 PC에서 `tailscale funnel`을 켜면 고정 주소 `https://<기기>.<tailnet>.ts.net`이 생김(무료 Personal 플랜. Funnel은 베타, 포트 443·8443·10000, 대역폭 한도 비공개). HTTPS라서 투표자 웹의 WebCrypto가 동작하고, TLS는 데모 PC에서 풀림. 팀 시험은 Tailscale Serve(tailnet 구성원만). Funnel은 필요할 때만 켜고 끝나면 `tailscale funnel reset`
   - **링크**: `VOTER_WEB_URL`은 Funnel 주소. 순서는 Funnel 켜기 → `VOTER_WEB_URL` 설정 → Core 시작 → 링크 발급. 선거가 열려 있는 동안 주소가 바뀌면 안 됨(기기 이름을 바꾸면 바뀜)
@@ -325,6 +326,11 @@
     - `BALLOT_SCHEME=SEALED_BOX_V1`이면 새 선거에 D-08·D-23이 다시 적용됨. 선거는 만들어질 때의 방식을 유지함
     - 이전 구현은 `sealedbox-baseline` 태그로 보관함
     - 기존 DB에는 `core/db/migrations/001_elgamal.sql`을 한 번 적용해야 함. 칸과 테이블만 추가하고 아무것도 지우지 않음
+- **기관별 웹 화면 (v1.7)**
+  - 기관마다 직원 계정을 만듦. 역할은 core-api.openapi.yaml이 다른 기관 직원에게 정한 `approver`(`create_staff --org org_observer --role approver`, org_neutral도 같음). 화면은 로그인의 `org_id`·`role`을 따르고, Core는 모든 호출을 그대로 검사함. 선거 만들기·명단·링크 발급·개표·결과 확정은 운영 기관 관리자에게만 보임
+  - 마감된 ElGamal 선거에 "우리 기관 복호화" 카드(`web/src/admin/OrgPanels.tsx`, `web/src/crypto/trusteeCheck.ts`): 기관이 열쇠 파일을 고르면 브라우저가 읽고 파일 안의 공개 기록과 맞는지 확인함. 선거의 기관 열쇠 목록에 있어야 하는 것은 파일의 기록(Core가 준 것이 아님)이라서 Core가 바꿔치기한 키는 거부됨. 브라우저가 tally-input과 Gateway 이벤트를 직접 읽어 trustee 도구의 `check()`를 그대로 실행하고(원장 대조 필수, `--allow-unavailable` 없음), 증명이 붙은 조각만 보냄. 조각을 보내기 전에 선거·기관마다 합계 하나를 그 브라우저 localStorage에 기록함. 공유 벡터 시험 `web/tests/trustee.test.ts`가 Core와 같은 조각 바이트를 재현함
+  - Gateway 읽기 키는 배포의 읽기 전용 `AUDITOR_KEY` 하나(기관과 초청 감사인이 함께 씀). 탭마다 한 번 입력(sessionStorage)하거나 웹용 열쇠 파일의 `gateway_auditor_key`로 넣음. nginx는 `GET /ledger/v1/events`·`/ledger/v1/nodes`만 그 헤더를 붙여 전달하고 Core 인증 정보는 보내지 않음. 사이트 전체 초당 5회 제한
+  - 중립 기관의 목록 화면에 노드 3개(연결, 블록 높이, 연결된 노드 수)를 `/v1/nodes`로 보여 줌
 - **한계 (보고서에 밝힘)**
   - 열쇠를 가진 사람이 서로 달라야 효과가 있음. 시연처럼 한 사람이 세 기관을 다 맡으면(`tools/trustees.sh`) 그 사람은 무엇이든 열 수 있음
   - trustee 도구는 Core가 준 개표 대상 목록을 Gateway에 저장된 BALLOT_RECEIVED 이벤트와 대조하고, 선거마다 합계를 한 번만 복호화함. 그래서 선관위와 Gateway 운영 기관이 짜지 않는다는 전제가 필요함
@@ -332,4 +338,6 @@
   - 암호화 직전의 선택은 브라우저에 있고, 시간 구간 연결 위험(S1)은 그대로임
   - 증명은 직접 구현했고 외부 감사를 받지 않았음. 군 연산만 libsodium에서 가져옴
   - 투표 웹의 암호 청크가 약 1MB임(libsodium sumo 빌드, 필요할 때 불러옴)
+  - 웹 복호화(v1.7)는 기관이 불러온 페이지를 믿어야 함. 웹을 제공하는 쪽(데모에서는 선관위 PC)이 열쇠 파일을 빼돌리는 페이지를 줄 수 있음. 진짜로 나누려면 기관마다 웹을 직접 제공하거나 고정하거나 CLI 도구를 써야 함. 데모는 세 열쇠 파일을 한 PC에 둠
+  - 웹의 "합계 하나" 기록은 그 브라우저에만 있음. 다른 브라우저·PC, 사이트 데이터 삭제, 시크릿 창이면 사라지고, 그러면 부정한 Core가 서로 다른 두 합계의 조각을 얻을 수 있음. 카드에 "한 선거는 같은 브라우저에서, 시크릿 창 금지"를 안내함. 더 강한 보호는 CLI의 파일 기록
 - **영향:** `contracts/ballot-elgamal.md`(신규), `contracts/core-api.openapi.yaml`(v1.2.0), Core(`elgamal.py`, `elections.py`, `voting.py`, `tally.py`, `views.py`, `scripts/trustee.py`, `scripts/register_trustee.py`, DB 스키마·마이그레이션), 웹(`elgamal.ts`, `seal.ts`), `rules/purevoting_rules/engine.py`(R5 `KEY_NOT_REVEALED`), `tests/vectors/elgamal-vectors.json`, `docker-compose.yml`(`BALLOT_SCHEME`), `tools/trustees.sh`, 위협 모델 S1·S3, 표를 내는 스크립트(`tests/scenarios/T01/setup.py`와 README의 `tools/trustees.sh keygen` 단계, `core/devtools/demo_flow.py`, `rules/devtools/worker_smoke.py`)
