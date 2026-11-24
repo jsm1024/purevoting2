@@ -1,0 +1,104 @@
+{
+  "schema_version": "1",
+  "version": "1.0.0",
+  "status": "proposed",
+  "source": {
+    "repository": "https://github.com/jsm1024/purevoting2",
+    "commit": "4e398deb7da0256d849ab0e58bd7ac752f8db2f0",
+    "path": "docs/test-plan.md",
+    "url": "https://github.com/jsm1024/purevoting2/pull/10",
+    "author": "Harits76"
+  },
+  "rows": [
+    {
+      "rule_id": "R1", "result": "FAIL", "match": "positive_any",
+      "keys": ["accepted_duplicate_tokens", "accepted_duplicate_nullifiers", "used_then_revoked"],
+      "cause_code": "PROCESSING_BUG",
+      "explanation": "The service accepted what its own checks should refuse."
+    },
+    {
+      "rule_id": "R1", "result": "FAIL", "match": "positive_any",
+      "keys": ["unknown_tokens", "unknown_nullifiers"],
+      "cause_code": "DATA_TAMPERING",
+      "explanation": "An accepted event refers to a row that does not exist in the views."
+    },
+    {
+      "rule_id": "R2", "result": "FAIL", "match": "positive_any",
+      "keys": ["events_before_start", "events_after_end", "events_after_close_final", "ledger_rejected_window"],
+      "cause_code": "PROCESSING_BUG",
+      "explanation": "The voter event passed Core's window check although it was outside the window."
+    },
+    {
+      "rule_id": "R3", "result": "FAIL", "match": "positive_any",
+      "keys": ["tally_count_mismatches"],
+      "cause_code": "DATA_TAMPERING",
+      "explanation": "The published tally counts or final checkpoint differ from the ledger."
+    },
+    {
+      "rule_id": "R3", "result": "FAIL", "match": "r3_other_fail",
+      "keys": ["count_relationship_violations"],
+      "cause_code": "PROCESSING_BUG",
+      "explanation": "Views, outbox, and ledger disagree without a tally-count tamper signal."
+    },
+    {
+      "rule_id": "R4", "result": "FAIL", "match": "positive_any",
+      "keys": ["unapproved_changes", "invalid_signatures", "duplicate_executions", "target_mismatches", "roster_chain_breaks"],
+      "cause_code": "UNAUTHORIZED_ADMIN_ACTION",
+      "explanation": "A change lacks a valid approval or has another effect than approved."
+    },
+    {
+      "rule_id": "R4", "result": "FAIL", "match": "positive_any",
+      "keys": ["missing_effects"],
+      "cause_code": "PROCESSING_BUG",
+      "explanation": "An approved action's effects were not applied."
+    },
+    {
+      "rule_id": "R5", "result": "FAIL", "match": "positive_any",
+      "keys": ["tables_mismatched", "row_ledger_mismatches", "sealed_hash_mismatches", "root_mismatches", "key_mismatch", "events_hash_mismatch", "anchors_mismatch"],
+      "cause_code": "DATA_TAMPERING",
+      "explanation": "Stored data differs from what was committed or anchored."
+    },
+    {
+      "rule_id": "R5", "result": "FAIL", "match": "positive_any",
+      "keys": ["chain_state_mismatch", "governance_mismatch"],
+      "cause_code": "DATA_TAMPERING",
+      "explanation": "The contract state differs from what the ledger events imply."
+    },
+    {
+      "rule_id": "R5", "result": "FAIL", "match": "positive_any",
+      "keys": ["tally_root_mismatches", "tally_final_checkpoint_mismatches", "tally_result_hash_mismatches", "tally_invalid_set_mismatches", "tally_share_failures", "tally_result_mismatches"],
+      "cause_code": "DATA_TAMPERING",
+      "explanation": "The published tally differs from the ledger's accepted ballots and the decryption shares."
+    },
+    {
+      "rule_id": "R5", "result": "FAIL", "match": "positive_any",
+      "keys": ["config_mismatch"],
+      "cause_code": "CONFIG_ERROR",
+      "explanation": "The election configuration differs from the committed one."
+    },
+    {
+      "rule_id": "R5", "result": "FAIL", "match": "positive_any",
+      "keys": ["rejected_checkpoints", "checkpoint_cadence_violations"],
+      "cause_code": "PROCESSING_BUG",
+      "explanation": "Checkpoint handling failed or ran off schedule."
+    },
+    {
+      "rule_id": "*", "result": "INCONCLUSIVE", "match": "reason_any",
+      "keys": ["BATCH_NOT_ANCHORED"],
+      "cause_code": "LEDGER_SYNC_DELAY",
+      "explanation": "Anchoring is late."
+    },
+    {
+      "rule_id": "*", "result": "INCONCLUSIVE", "match": "reason_any",
+      "keys": ["NODE_UNAVAILABLE", "VIEW_UNAVAILABLE"],
+      "cause_code": "SYSTEM_FAILURE",
+      "explanation": "A required service cannot be read."
+    },
+    {
+      "rule_id": "*", "result": "INCONCLUSIVE", "match": "reason_any",
+      "keys": ["KEY_NOT_REVEALED"],
+      "cause_code": "CONFIG_ERROR",
+      "explanation": "The tally key or decryption shares were not revealed at TALLY."
+    }
+  ]
+}

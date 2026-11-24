@@ -231,17 +231,52 @@ services:
       start_period: 45s
     restart: unless-stopped
 
-  # OWNER Anik (rules/): audit-agent for the M2 demo (D-15 v1.2, zero cost). Needs AGENT_KEY, CORE_URL, GATEWAY_URL
-  # (most agent tools are Gateway reads), AI_PROVIDER (none = template report, else the local runtime Anik picks), AI_BASE_URL,
-  # AI_MODEL and a volume for the report files; on a Linux host extra_hosts: ["host.docker.internal:host-gateway"];
-  # depends on core and ledger-gateway being healthy.
-  #
-  # audit-agent:
-  #   build: { context: rules }
-  #   ...
+  # File reports (D-15 / D-28): read-only AGENT_KEY, template provider, no AI model.
+  # The proposed B1 mapping is disabled until explicitly selected; unknown or
+  # unapproved mappings produce ESCALATED reports, never an invented cause.
+  # AGENT_KEY is checked at service startup, not interpolation, so bootstrap is
+  # still possible before all deployment values have been populated.
+  audit-agent:
+    build: { context: rules }
+    entrypoint: ["python", "-m", "purevoting_rules.audit_agent"]
+    command: []
+    environment:
+      CORE_URL: http://core:8000
+      GATEWAY_URL: http://ledger-gateway:8100
+      AGENT_KEY: ${AGENT_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-none}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-template}
+      AUDIT_STATE_DIR: /var/lib/purevoting/audit
+      AUDIT_REPORT_DIR: /reports
+      AUDIT_DEPLOYMENT_ID: "${CHAIN_ID:-}:${CONTRACT_ADDRESS:-}"
+      AUDIT_POLL_SECONDS: ${AUDIT_POLL_SECONDS:-30}
+      AUDIT_MAX_ATTEMPTS: ${AUDIT_MAX_ATTEMPTS:-3}
+      AUDIT_REPORTS_PER_POLL: ${AUDIT_REPORTS_PER_POLL:-100}
+      AUDIT_B1_MAPPING: ${AUDIT_B1_MAPPING:-}
+      AUDIT_ALLOW_PROPOSED_MAPPING: ${AUDIT_ALLOW_PROPOSED_MAPPING:-false}
+      PUREVOTING_REFERENCE_ROOT: /reference
+    volumes:
+      - audit-agent-state:/var/lib/purevoting/audit
+      - audit-reports:/reports
+      - ./contracts:/reference/contracts:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      core: { condition: service_healthy }
+      ledger-gateway: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-m", "purevoting_rules.audit_agent", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
 
 volumes:
   rules-state:
+  audit-agent-state:
+  audit-reports:
   chain-build:
   node-commission-data:
   node-observer-data:
