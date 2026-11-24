@@ -21,6 +21,45 @@ list T01–T14, plus T15–T16 added for tally and review governance) will be ex
   AI tokens and time to report (API cost is 0: no paid AI, D-15 v1.2). B2 evidence validity is measured offline by a
   read-only script (Core report storage and EVIDENCE_NOT_FOUND are future work, D-28).
 
+## B1 cause mapping
+
+B1 (rules only) names a cause from the rule ID and the deciding `observed` key alone, with no reasoning. The table is
+fixed here, before any run (confirmed by Seungmin on 2026-11-16), and is never changed after seeing results. The cause values are `common.schema.json#/$defs/CauseCode`.
+Rule: when several keys are non-zero, the first row of the table (top to bottom, rule by rule) that matches decides.
+A PASS has no cause; an INCONCLUSIVE gets the cause of its `inconclusive_reason`.
+
+| Rule | Deciding `observed` key or reason | B1 cause | Why this cause |
+|---|---|---|---|
+| R1 | accepted_duplicate_tokens, accepted_duplicate_nullifiers, used_then_revoked | PROCESSING_BUG | the service accepted what its own checks refuse |
+| R1 | unknown_tokens, unknown_nullifiers | DATA_TAMPERING | an accepted event refers to a row that does not exist in the views (decision 1) |
+| R2 | events_before_start, events_after_end, events_after_close_final, ledger_rejected_window | PROCESSING_BUG | the voter event passed Core's window check although it was outside the window |
+| R3 | tally_count_mismatches (> 0; count_relationship_violations holds "tally_counts") | DATA_TAMPERING | the published tally counts or final_checkpoint differ from the ledger |
+| R3 | any other R3 FAIL (an entry of count_relationship_violations other than "tally_counts", e.g. checkpoint_voter_events, ledger_token_outcomes / ledger_ballot_outcomes, committed_counts) | PROCESSING_BUG | views, outbox and ledger disagree without a tamper signal |
+| R4 | unapproved_changes, invalid_signatures, duplicate_executions, target_mismatches, roster_chain_breaks | UNAUTHORIZED_ADMIN_ACTION | a change without a valid approval, or with another effect than approved |
+| R4 | missing_effects | PROCESSING_BUG | an approved action whose effects were not applied |
+| R5 | tables_mismatched, row_ledger_mismatches, sealed_hash_mismatches, root_mismatches, key_mismatch, events_hash_mismatch, anchors_mismatch | DATA_TAMPERING | stored data differs from what was committed or anchored |
+| R5 | chain_state_mismatch, governance_mismatch | DATA_TAMPERING | the contract state differs from what the ledger events imply (a Gateway that sent other arguments) |
+| R5 | tally_root_mismatches, tally_final_checkpoint_mismatches, tally_result_hash_mismatches, tally_invalid_set_mismatches, tally_share_failures, tally_result_mismatches | DATA_TAMPERING | the published tally differs from what the ledger's accepted ballots and the decryption shares give |
+| R5 | config_mismatch | CONFIG_ERROR | the election configuration differs from the committed one |
+| R5 | rejected_checkpoints, checkpoint_cadence_violations | PROCESSING_BUG | checkpoint handling failed or ran off schedule |
+| any | INCONCLUSIVE BATCH_NOT_ANCHORED | LEDGER_SYNC_DELAY | anchoring is late |
+| any | INCONCLUSIVE NODE_UNAVAILABLE, VIEW_UNAVAILABLE | SYSTEM_FAILURE | a required service cannot be read |
+| any | INCONCLUSIVE KEY_NOT_REVEALED | CONFIG_ERROR | the tally key was not revealed at TALLY |
+
+Keys that never decide the cause: R1 refused_duplicates; R2 refused_not_open; the R3 counts and the six tally_* values
+(tally_final_checkpoint, tally_ballot_count, tally_invalid_ballots, tally_excluded_ballots, tally_accepted_ballots,
+tally_rejected_ballots); R4 executed_actions and failed_actions; R5 events_unanchored, rejections_unanchored and the id
+lists. An INCONCLUSIVE with reason OTHER has no row and gets no cause.
+
+Not used by B1: FALSE_POSITIVE, CLOCK_SKEW, UNKNOWN (B1 never says "unknown" or "false positive"; a finding without a
+matching row gets no cause and counts as wrong).
+
+Decisions behind the table (confirmed by Seungmin, 2026-11-16; each changes B1's measured accuracy):
+1. R1 unknown_tokens / unknown_nullifiers: DATA_TAMPERING (an event without its issuance row cannot come from the normal path), not PROCESSING_BUG.
+2. R2: all time violations map to PROCESSING_BUG; CLOCK_SKEW is never chosen because R2 cannot tell skew from a bug. A time-based scenario (T04) is labelled with the cause its injection implements.
+3. R3 mismatches: PROCESSING_BUG by default; the T15 labels (a) omit one ballot and (b) change a total involve tampering with the tally and are labelled DATA_TAMPERING, which B1 reaches only through tally_count_mismatches (R3) and the R5 tally keys.
+4. The cause labels of T02, T04, T05, T08, T15 are set from the injection, not from this table: a variant where this table gives the wrong cause is a legitimate B1 error and is kept. A scenario without an injected fault (T01, and T05-api where Core refuses) has `"cause_code": null`.
+
 ## Defect tests
 
 | ID | Scenario / injection | Contract elements used | Pass criterion |
