@@ -145,8 +145,12 @@ def judge(label: dict, decided: dict, items: list[dict], k: int) -> list[str]:
 
 
 def run(a, rec: dict, hooks: dict | None = None) -> None:
-    """The T01 flow. `hooks` (tests/scenarios/tamper.py, T05 and T08) may add "after_freeze"(ctx) and
-    "after_commit"(ctx, k) -> judged checkpoint; ctx holds the client, auth, election and run record."""
+    """The T01 flow. `hooks` (tests/scenarios/tamper.py: T02, T04, T05, T08) may add "after_freeze"(ctx),
+    "before_open"(ctx) (links issued, window not open yet), "before_ballot"(ctx, n) (before the n-th voter's redeem,
+    n from 0), "after_ballots"(ctx, voted) (every ballot cast; `voted` = their link indices; runs before the judged
+    checkpoint is read), "after_commit"(ctx, k) -> judged checkpoint (inside the window) and "after_close"(ctx, k) ->
+    judged checkpoint (tally_tamper.py: T15, after the window); ctx holds the client, auth, election, links and run
+    record."""
     hooks = hooks or {}
     c = httpx.Client(base_url=a.core, timeout=15)
     B, window, voters, votes = a.bucket, a.bucket * a.buckets, a.voters, a.votes
@@ -189,6 +193,11 @@ def run(a, rec: dict, hooks: dict | None = None) -> None:
         raise Stop(f"{len(tokens)} links for {voters} voters")
     if time.time() >= start:
         raise Stop(f"setup ran past window_start; raise --lead (now {a.lead} s)")
+    ctx.update(tokens=tokens, window_start=start, bucket=B)
+    if "before_open" in hooks:
+        hooks["before_open"](ctx)
+        if time.time() >= start:
+            raise Stop(f"the before-open step ran past window_start; raise --lead (now {a.lead} s)")
 
     log("waiting for the window to open")
 
@@ -208,9 +217,12 @@ def run(a, rec: dict, hooks: dict | None = None) -> None:
             return elgamal.encrypt_ballot(pk, eid, H(credential), len(ids), ids.index(cand))
         return nacl.public.SealedBox(nacl.public.PublicKey(pk)).encrypt(json.dumps({"candidate_id": cand}).encode())
 
-    receipts = []
-    for i in rng.sample(range(voters), votes):          # voter order and choice vary by seed (test-plan protocol)
+    receipts, voted = [], []
+    for n, i in enumerate(rng.sample(range(voters), votes)):   # voter order and choice vary by seed (test-plan protocol)
         cand = rng.choice(pub["candidates"])["candidate_id"]
+        if "before_ballot" in hooks:
+            hooks["before_ballot"](ctx, n)
+        voted.append(i)
         credential = base64.urlsafe_b64encode(secrets.token_bytes(16)).rstrip(b"=").decode()
         expect(c.post("/v1/credentials:redeem",
                       json={"election_id": eid, "token": tokens[i], "nullifier_hash": H(credential)}), 200)
@@ -218,6 +230,8 @@ def run(a, rec: dict, hooks: dict | None = None) -> None:
         b = expect(c.post("/v1/ballots", json={"election_id": eid, "credential": credential,
                                                "sealed_ballot": base64.b64encode(sealed).decode()}), 201).json()
         receipts.append(b["receipt_hash"])
+    if "after_ballots" in hooks:
+        hooks["after_ballots"](ctx, voted)
     k = rec["judged_checkpoint"] = staff_election()["open_checkpoint"]   # commits the last ballot (or one later)
     rec["checks"]["ballots_201"] = len(receipts)
     log(f"{len(receipts)} ballots: 201 + receipt; judged checkpoint {k}")
@@ -237,6 +251,10 @@ def run(a, rec: dict, hooks: dict | None = None) -> None:
         k = rec["judged_checkpoint"] = hooks["after_commit"](ctx, k)
         if time.time() >= end:
             raise Stop("the window ended before the judged checkpoint; use a longer window")
+        poll(lambda: staff_election()["counters"]["as_of_checkpoint"] >= k, B + a.timeout,
+             f"checkpoint {k} committed")
+    if "after_close" in hooks:    # T15: close, decrypt, tally (tampered); returns the TALLY (or last) checkpoint
+        k = rec["judged_checkpoint"] = hooks["after_close"](ctx, k)
         poll(lambda: staff_election()["counters"]["as_of_checkpoint"] >= k, B + a.timeout,
              f"checkpoint {k} committed")
     log(f"checkpoint {k} committed; waiting for R1-R5 findings at it")
@@ -265,8 +283,10 @@ def run(a, rec: dict, hooks: dict | None = None) -> None:
     alerts = expect(c.get(f"/v1/elections/{eid}/audit-alerts", headers=auth), 200).json()["items"]
     rec["alerts"] = [{n: x.get(n) for n in ("checkpoint", "kind", "source", "detail")} for x in alerts]
     rec["checks"]["transition_rejected"] = sum(x["kind"] == "TRANSITION_REJECTED" for x in alerts)
-    if rec["checks"]["transition_rejected"]:
-        rec["problems"].append("a transition was REJECTED (TRANSITION_REJECTED alert)")
+    # a variant whose fault is a refused transition (T15d) declares it: exactly that many, no more, no fewer
+    allowed = ctx.get("expected_alerts", {}).get("TRANSITION_REJECTED", 0)
+    if rec["checks"]["transition_rejected"] != allowed:
+        rec["problems"].append(f"{rec['checks']['transition_rejected']} TRANSITION_REJECTED alert(s), expected {allowed}")
     for x in alerts:
         log(f"alert {x['kind']} ({x['source']}, checkpoint {x['checkpoint']}): {(x.get('detail') or '')[:120]}")
 

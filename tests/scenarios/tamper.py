@@ -1,6 +1,13 @@
-"""T05 and T08 variants (docs/test-plan.md): the T01 flow (T01/setup.py) plus one fault, judged against the variant's
-expected.json (Harits, tests/scenarios/LABELS_T05_T08.md). Each variant folder's setup.py calls main() here. How to
-run: SETUP_T05_T08.md.
+"""T02, T04, T05 and T08 variants (docs/test-plan.md): the T01 flow (T01/setup.py) plus one fault, judged against the
+variant's expected.json (Harits, tests/scenarios/LABELS_T02_T04.md and LABELS_T05_T08.md). Each variant folder's
+setup.py calls main() here. How to run: SETUP_T02_T04.md, SETUP_T05_T08.md.
+
+  T02            after the ballots, inside the window: the second redeem of a used link, 409 TOKEN_ALREADY_USED
+  T04-core       before window_start: one redeem, 409 ELECTION_NOT_OPEN
+  T04-lastbucket the last voter redeems and votes in the window's last bucket (accepted, 201)
+  T04-injected   after the ballots' checkpoint is committed, one TOKEN_USED with a bucketed time before window_start
+                 written into Core's outbox (Core's open checkpoint, read in the same statement); the Gateway must
+                 reject it ELECTION_NOT_OPEN
 
   T05-api     after the freeze, PUT the roster again: Core must answer 409 and change nothing
   T05-db-add  after the ballots' checkpoint is committed, INSERT one ACTIVE roster row in the database with
@@ -15,12 +22,14 @@ The edited row must already be in a committed checkpoint and the judged checkpoi
 Nothing secret is printed: the SQL holds only the election id, and psql returns checkpoint numbers.
 """
 import importlib.util
+import json
 import os
 import re
 import secrets
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -137,7 +146,113 @@ def row_edit(variant: str):
     return hook
 
 
+def _redeem(ctx, token: str):
+    c, eid = ctx["client"], ctx["election_id"]
+    r = c.post("/v1/credentials:redeem", json={"election_id": eid, "token": token,
+                                                "nullifier_hash": t01.H(secrets.token_urlsafe(16))})
+    return r.status_code, (r.json().get("code") if r.status_code >= 400 else None)
+
+
+def duplicate_redeem(ctx, voted: list[int]) -> None:
+    """T02 (LABELS_T02_T04.md): the second redeem of a link that was already used, inside the window and before the
+    judged checkpoint is read (so its rejected_attempts row has checkpoint <= C): 409 TOKEN_ALREADY_USED."""
+    if time.time() >= ctx["window_end"]:
+        raise t01.Stop("the window ended before the second redeem")
+    status, code = _redeem(ctx, ctx["tokens"][voted[0]])
+    ctx["rec"]["checks"]["second_redeem"] = {"status": status, "code": code}
+    t01.log(f"second redeem of a used link: HTTP {status} {code}")
+    if (status, code) != (409, "TOKEN_ALREADY_USED"):
+        raise t01.Failed(f"second redeem: HTTP {status} {code} (expected 409 TOKEN_ALREADY_USED)")
+
+
+def redeem_before_start(ctx) -> None:
+    """T04-core: one redeem before window_start (a redeem, never a ballot: a ballot gets CREDENTIAL_UNKNOWN first):
+    409 ELECTION_NOT_OPEN, recorded at Core's open checkpoint (<= C)."""
+    status, code = _redeem(ctx, ctx["tokens"][-1])
+    ctx["rec"]["checks"]["redeem_before_start"] = {"status": status, "code": code,
+                                                   "seconds_before_start": round(ctx["window_start"] - time.time())}
+    t01.log(f"redeem before window_start: HTTP {status} {code}")
+    if (status, code) != (409, "ELECTION_NOT_OPEN"):
+        raise t01.Failed(f"redeem before start: HTTP {status} {code} (expected 409 ELECTION_NOT_OPEN)")
+
+
+def wait_last_bucket(ctx, n: int) -> None:
+    """T04-lastbucket: the last voter redeems and votes inside the window's last bucket
+    (occurred_at + time_bucket_seconds = effective_end)."""
+    if n != ctx["rec"]["parameters"]["votes"] - 1:
+        return
+    last = ctx["window_end"] - ctx["bucket"]
+    wait = last + 2 - time.time()
+    if wait < 0:
+        raise t01.Stop("the earlier ballots ran into the last bucket; use a longer window")
+    t01.log(f"waiting {int(wait)} s for the last bucket")
+    time.sleep(wait)
+
+
+def check_last_bucket(ctx, voted: list[int]) -> None:
+    """T04-lastbucket: exactly one BALLOT_RECEIVED of the election is in the last bucket (outbox bucket_start)."""
+    eid = check_election_id(ctx["election_id"])
+    if time.time() >= ctx["window_end"]:
+        raise t01.Stop("the last ballot finished after window_end")
+    out = psql(f"SELECT count(*) FROM credential.outbox WHERE election_id = '{eid}' AND event->>'type' = "
+               f"'BALLOT_RECEIVED' AND bucket_start = to_timestamp({ctx['window_end'] - ctx['bucket']});")
+    n = int(out[0])
+    ctx["rec"]["checks"]["ballots_in_last_bucket"] = n
+    t01.log(f"BALLOT_RECEIVED in the last bucket: {n}")
+    if n != 1:
+        raise t01.Stop(f"{n} ballots in the last bucket (expected 1)")
+
+
+def inject_outside_window(ctx, k: int) -> int:
+    """T04-injected: one TOKEN_USED written straight into Core's outbox, bypassing Core: bucketed time one bucket
+    before window_start, valid payload_hash and key field, checkpoint = Core's open checkpoint read in the same
+    statement (not committed yet, <= CLOSE_FINAL). The Gateway must reject it ELECTION_NOT_OPEN; Core keeps no row."""
+    from app import hashing                  # core/app, on sys.path through T01/setup.py
+    from app.ids import random_id
+    eid, rec = check_election_id(ctx["election_id"]), ctx["rec"]
+    t = ctx["window_start"] - ctx["bucket"]
+    payload = {"token_hash": t01.H("T04-injected " + secrets.token_hex(16))}
+    event = {"event_id": random_id("evr"), "schema_version": "1", "election_id": eid, "type": "TOKEN_USED",
+             "source": "core", "checkpoint": 0, "occurred_at": t01.iso(t), "time_precision": "bucketed",
+             "time_bucket_seconds": ctx["bucket"], "actor": {"kind": "voter_anonymous"},
+             "payload": payload, "payload_hash": hashing.Hc(payload)}
+    body = json.dumps(event, separators=(",", ":"))
+    if not re.fullmatch(r"[A-Za-z0-9_:,{}\"\-]+", body):
+        raise t01.Stop("unexpected characters in the injected event; not put into SQL")
+    done = committed(ctx)
+    out = psql(
+        "INSERT INTO credential.outbox (event_id, election_id, kind, seq, bucket_start, event, payload_hash) "
+        f"SELECT '{event['event_id']}', '{eid}', 'voter', NULL, to_timestamp({t}), "
+        f"jsonb_set(CAST('{body}' AS jsonb), '{{checkpoint}}', to_jsonb(open_checkpoint)), '{event['payload_hash']}' "
+        f"FROM credential.elections WHERE election_id = '{eid}' FOR SHARE RETURNING (event->>'checkpoint')::int;")
+    if len(out) != 1:
+        raise t01.Stop(f"outbox insert returned {len(out)} rows")
+    judged = int(out[0])
+    rec["injection"] = {"kind": "TOKEN_USED outside the window written into the outbox",
+                        "event_checkpoint": judged, "committed_at_insert": done,
+                        "occurred_at_before_start_s": ctx["window_start"] - t}
+    t01.log(f"injected one TOKEN_USED (occurred_at one bucket before window_start) at checkpoint {judged} "
+            f"(committed: {done})")
+    if judged <= done:
+        raise t01.Stop(f"the injected event's checkpoint {judged} is already committed")
+
+    def outcome():
+        row = psql(f"SELECT status || '|' || coalesce(reject_code, '') FROM credential.outbox "
+                   f"WHERE event_id = '{event['event_id']}';")
+        return bool(row) and not row[0].startswith("PENDING") and row[0]
+    status, code = t01.poll(outcome, 120, "the Gateway's outcome for the injected event").split("|")
+    rec["injection"]["gateway_outcome"] = {"status": status, "reject_code": code or None}
+    t01.log(f"Gateway outcome for the injected event: {status} {code}")
+    if (status, code) != ("REJECTED", "ELECTION_NOT_OPEN"):
+        raise t01.Stop(f"injected event {status} {code} (the label needs REJECTED ELECTION_NOT_OPEN)")
+    return judged
+
+
 VARIANTS = {
+    "T02": {"after_ballots": duplicate_redeem},
+    "T04-core": {"before_open": redeem_before_start},
+    "T04-lastbucket": {"before_ballot": wait_last_bucket, "after_ballots": check_last_bucket},
+    "T04-injected": {"after_commit": inject_outside_window},
     "T05-api": {"after_freeze": roster_put_after_freeze},
     "T05-db-add": {"after_commit": roster_insert},
     "T08a": {"after_commit": row_edit("T08a")},
