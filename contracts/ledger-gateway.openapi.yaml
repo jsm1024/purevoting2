@@ -371,6 +371,7 @@ paths:
       operationId: createProposal
       summary: Open an approval proposal for a privileged admin action (core only, D-11; other keys → 403)
       description: |
+        Out of scope in this version (D-31): not implemented. The Gateway answers 501.
         Idempotent by proposal_id: the same body again → 200 with the existing proposal; a different body → 409.
         The request carries the requesting organization's signature over the request digest (hashing.md).
         The contract verifies it against the organization registry and emits ADMIN_ACTION_REQUESTED.
@@ -399,6 +400,7 @@ paths:
     get:
       tags: [governance]
       operationId: listProposals
+      description: 'Out of scope in this version (D-31): not implemented. The Gateway answers 501.'
       security: [{ coreKey: [] }, { ruleKey: [] }, { agentKey: [] }, { auditorKey: [] }]
       parameters:
         - { $ref: '#/components/parameters/ElectionIdQuery' }
@@ -422,6 +424,7 @@ paths:
     get:
       tags: [governance]
       operationId: getProposal
+      description: 'Out of scope in this version (D-31): not implemented. The Gateway answers 501.'
       security: [{ coreKey: [] }, { ruleKey: [] }, { agentKey: [] }, { auditorKey: [] }]
       parameters:
         - { $ref: '#/components/parameters/ProposalIdPath' }
@@ -439,6 +442,7 @@ paths:
       operationId: decideProposal
       summary: Record one organization's signed APPROVE / REJECT (core relays it; it cannot create it)
       description: |
+        Out of scope in this version (D-31): not implemented. The Gateway answers 501.
         The contract verifies the signature against the key registered for org_id, rejects organizations that do not take
         part in the election (ORG_NOT_REGISTERED), and rejects the requesting
         organization (SELF_APPROVAL_NOT_ALLOWED), organizations not in the election (403 ORG_NOT_REGISTERED) and repeated
@@ -563,6 +567,7 @@ paths:
       operationId: reviewFindingRecord
       summary: Record one organization's signed review of a finding (core relays it; it cannot create it). Emits FINDING_REVIEWED.
       description: |
+        Out of scope in this version (D-31): not implemented. The Gateway answers 501.
         The contract verifies the signature against the organization registry, refuses organizations that do not take
         part in the election (ELECTION_CREATED.organizations), and refuses reviews of PASS findings.
         Retry-safe: the same organization sending the same decision, note_hash and signature again gets 200 with the

@@ -1,4 +1,4 @@
-# Design decisions (v1.6)
+# Design decisions (v1.8)
 
 > 2026-10-18 v1.0: after a supervisor review (DECISIONS VERDICT: READY TO CONFIRM) every item except D-02 and D-15 is
 > **confirmed as recommended**. Wording added at confirmation is marked **Confirmed note (v1.0)**. D-02 is delegated to
@@ -32,6 +32,10 @@
 > (same checks as the trustee tool; the key file is read locally and never uploaded); the public entry forwards two
 > Gateway read paths (`/ledger/v1/events`, `/ledger/v1/nodes`) with the caller's read-only key (the deployment's shared
 > `AUDITOR_KEY`). Team-lead decision.
+> 2026-11-27 v1.8: new D-31 — organization-signed admin actions with proposals and approval signatures
+> (ROSTER_AMEND, ELECTION_VOID) and signed finding reviews with the finalize quorum built on them are removed from
+> this version's scope; `contracts/` keeps their definitions, marked "Out of scope in this version (D-31)". D-11 and
+> D-24 noted. Team-lead decision.
 > History: drafts v0.1–v0.18 were revised after supervisor reviews 1–17; the Korean original with the full history is
 > `decisions.ko.md`. If the two differ, this English version applies (D-19).
 
@@ -49,7 +53,7 @@
 | D-08 | Ballot encryption | Sealed with the election public key (libsodium sealed box), decrypted after closing (v1.6: replaced by D-30 unless `BALLOT_SCHEME=SEALED_BOX_V1`) | Seungmin | Confirmed (v1.6: superseded by D-30 by default) |
 | D-09 | Lost link / credential | **A used link is never re-enabled.** Only a lost unused link is reissued after approval (TOKEN_REISSUE, optional). A lost credential = abstention | Seungmin | Confirmed |
 | D-10 | Voter-side time precision | Ledger and views keep only bucketed times and checkpoint numbers (bucket 60 s in the web, not enforced per roster size since v1.4); window bounds aligned to buckets | Seungmin, Harits, Anik | Confirmed (v1.4 change) |
-| D-11 | Approvals | Roster amendment, link reissue, window change, early close, void: approval by **threshold** orgs other than the requester, each signing with its own key; signatures verified on chain (v1.5: no approval for a close once every voter has voted) | Harits, Seungmin | Confirmed (v1.5 exception) |
+| D-11 | Approvals | Roster amendment, link reissue, window change, early close, void: approval by **threshold** orgs other than the requester, each signing with its own key; signatures verified on chain (v1.5: no approval for a close once every voter has voted; v1.8: out of scope, D-31) | Harits, Seungmin | Confirmed (v1.5 exception; v1.8: out of scope, D-31) |
 | D-12 | Core ↔ ledger consistency | Outbox + seq; strict transitions applied at once and kept if rejected (alert); permissive ones applied after ACCEPTED, reverted if rejected | Seungmin, Harits | Confirmed |
 | D-13 | Rule Engine data access | Core read-only views (as of a checkpoint) + Gateway query API + direct node reads; no DB access | Anik, Seungmin | Confirmed |
 | D-14 | Rule / checkpoint cadence | Checkpoint interval = integer multiple of the bucket (default 1×) + on state changes; rules at every checkpoint + after closing + manual | Anik, Seungmin | Confirmed |
@@ -62,13 +66,14 @@
 | D-21 | Organization signing keys | Each org's node account registers its own key in the **on-chain registry**; the commission cannot set keys; approvers keep their org's key | Harits, Seungmin | Confirmed |
 | D-22 | Who judges voter-side violations | Per-event checks (window, duplicates) in Gateway software; the chain checks batch time ranges and system events (state machine, approval signatures) | Harits | Confirmed |
 | D-23 | Election private key | MVP: held by the commission, **revealed after the tally** so auditors can recount (R5); threshold decryption is future work (v1.6: D-30 has no whole private key) | Seungmin | Confirmed (v1.6: SEALED_BOX_V1 only) |
-| D-24 | Finalization and review authority | Rule Engine records findings on the ledger; FAIL / INCONCLUSIVE resolved only by signed reviews of ≥ threshold orgs **other than the operator**; the contract checks at finalization; AI reports optional | Seungmin, Anik, Harits | Confirmed |
+| D-24 | Finalization and review authority | Rule Engine records findings on the ledger; FAIL / INCONCLUSIVE resolved only by signed reviews of ≥ threshold orgs **other than the operator**; the contract checks at finalization; AI reports optional (v1.8: signed reviews and their quorum out of scope, D-31) | Seungmin, Anik, Harits | Confirmed (v1.8: reviews out of scope, D-31) |
 | D-25 | Rule Engine operator | ruleKey held and operated by an org other than the commission and the Gateway operator (demo: observer, v1.1) | All | Confirmed (v1.1) |
 | D-26 | Gateway operator | Neutral org. It can delay relaying but cannot forge signed approvals, reviews or findings; signers can submit directly on chain | Harits | Confirmed |
 | D-27 | Confirmation depth | A chain item counts only in a block with ≥ D blocks on top (D = 2, *provisional*); pinned like the contract address | Harits, Seungmin, Anik | Confirmed (v1.1) |
-| D-28 | Schedule compression | Demo version 2026-11-19, everything finished by 2026-11-30; milestones M1–M3, per-owner dates, handoffs and fallbacks in `docs/schedule.md`; optional features not built; experiment reduced; mandatory scope unchanged | All | Confirmed (v1.2) |
+| D-28 | Schedule compression | Demo version 2026-11-19, everything finished by 2026-11-30; milestones M1–M3, per-owner dates, handoffs and fallbacks in `docs/schedule.md`; optional features not built; experiment reduced; mandatory scope unchanged (v1.8: roster amendment and voiding removed from scope, D-31) | All | Confirmed (v1.2) |
 | D-30 | Ballot secrecy against the commission | Exponential ElGamal ballots (one 0/1 ciphertext per candidate with validity proofs) under the sum of the three organizations' keys; Core adds them up and only the per-candidate sums are decrypted, each organization sending a proven share; nobody holds a whole key; chain and contract unchanged | Seungmin | Confirmed (v1.6) |
 | D-29 | Public access | Stack stays on the demo PC; the compose `web` service (nginx: built web + Core `/v1/`; v1.7: + two Gateway read paths, D-30) is the only entry, published over HTTPS by a free **Tailscale Funnel** (team tests: Tailscale Serve); no cloud hosting | Seungmin | Confirmed (v1.3) |
+| D-31 | Scope of this version (v1.8) | Organization-signed admin actions with proposals and approvals (ROSTER_AMEND, ELECTION_VOID) and signed finding reviews with the finalize quorum built on them are **out of scope**; contract texts kept and marked; any unsuperseded FAIL / INCONCLUSIVE finding blocks finalization for good | Seungmin | Confirmed (v1.8) |
 
 ---
 
@@ -198,6 +203,9 @@
 - **Affects:** `ledger-events.schema.json`, `ElectionCreate.time_bucket_seconds`
 
 ### D-11. Approvals
+- **v1.8:** out of scope in this version (D-31): proposals, approval signatures, ROSTER_AMEND and
+  ELECTION_VOID are not implemented. The ALL_VOTED close (v1.5 exception) stays in scope and is implemented.
+
 
 | Action | Approval |
 |---|---|
@@ -326,6 +334,8 @@
   sealed ballot can prove their choice (vote-selling / coercion risk). Threshold decryption and decryption proofs are future work.
 
 ### D-24. Finalization and review authority
+- **v1.8:** signed reviews (FINDING_REVIEWED), RESOLVED / CONFIRMED_ISSUE and the review quorum are out of
+  scope in this version (D-31); finding records on the ledger and the finalize check stay.
 - **Decision**
   - The Rule Engine records each finding hash itself (FINDING_RECORDED); Core cannot hide or alter findings.
   - FAIL / INCONCLUSIVE reviews are signed by each organization with its own key and recorded on the ledger
@@ -404,7 +414,8 @@
   - `docs/schedule.md` replaces the week table of system-design section 9 and the milestone tables of `docs/roles/*`:
     M1 11-11 (T01 on the real stack), M2 11-19 (demo version), M3 11-26 (mandatory scope); everything finished by
     11-30 (v1.2.1: M4, T14 and the 12-04 date removed).
-  - Mandatory scope unchanged (D-01): normal vote, roster amendment, voiding, R1–R5, T01, T02, T04, T05, T08, T15.
+  - Mandatory scope unchanged (D-01): normal vote, roster amendment, voiding, R1–R5, T01, T02, T04, T05, T08, T15
+    (v1.8: roster amendment and voiding removed from scope, D-31).
   - Not built: WINDOW_CHANGE, ELECTION_CLOSE_EARLY, TOKEN_REISSUE, direct chain submissions, T03, T06, T07, T09–T14, T16 (T14 fresh-PC test dropped in v1.2.1).
   - AI Audit Agent: zero cost only (D-15 v1.2), part of the M2 demo. Anik builds the template report by 11-12, checks
     a local free model on 11-13 (go / no-go) and integrates the agent by 11-17 (files; Core report storage is future
@@ -532,3 +543,36 @@
     `tools/trustees.sh`, threat model S1 / S3.
   - Scripts that cast ballots: `tests/scenarios/T01/setup.py` (and its README step `tools/trustees.sh keygen`),
     `core/devtools/demo_flow.py`, `rules/devtools/worker_smoke.py`.
+
+### D-31. Scope of this version (v1.8)
+- **Background:** D-11 (organization-signed admin actions) and D-24 (signed finding reviews) were part of the mandatory
+  scope (D-01, D-28). Neither is part of the path an election takes in this version.
+- **Decision:** Not needed for the election flow of this version (create → roster → links → vote → close → three-organization decryption → tally → audit → finalize), so excluded from scope. Team-lead decision. (2026-11-27)
+  - Out of scope in this version (not "not implemented yet"):
+    1. Organization-signed admin actions with proposals and approval signatures: ROSTER_AMEND and ELECTION_VOID, and
+       the machinery for them — contract `proposalState`, `openProposal`, `submitDecision` / `relayDecision`,
+       `executeAction`, `failAction`, `amendRoster`, `voidElection`, event `ProposalDecided`; Gateway `/v1/proposals*`;
+       Core `/v1/elections/{id}/admin-actions` and `/v1/admin-actions/*`; the approval screen. TOKEN_REISSUE,
+       WINDOW_CHANGE and ELECTION_CLOSE_EARLY stay out under D-28; the ALL_VOTED close (v1.5) stays in scope and is
+       implemented.
+    2. Signed finding reviews — contract `submitFindingReview` / `relayFindingReview`, event `FindingReviewed`
+       (ledger FINDING_REVIEWED), Gateway `POST /v1/finding-records/{id}/reviews`, Core
+       `PATCH /v1/findings/{id}/review`, the review screen — and the finalize quorum built on them.
+  - Mandatory scope (D-28) is now: normal vote, R1–R5, T01, T02, T04, T05, T08, T15.
+  - Mark, don't delete: Core, Rule Engine and ledger code still use these names, so definitions, schema fields, enum
+    values and examples stay in `contracts/`; each affected section or description starts with "Out of scope in this
+    version (D-31): not implemented." Documentation only, no interface change.
+- **Behaviour in this version** (checked in `ledger/contracts/PureVotingLedger.sol` `finalizeElection`,
+  `_requireFindingsFinal`, `_recordFinding`, `_supersede`, `_hasHigherPass`; `core/app/tally.py` `check_finalizable`;
+  `ledger/gateway/gw_server.py` `NOT_IMPLEMENTED`):
+  - Finalize needs a finding of each of R1–R5 at the TALLY checkpoint and is refused (contract `FindingsUnresolved`;
+    Core answers 409 FINDINGS_UNREVIEWED before sending) while any FAIL or INCONCLUSIVE finding of the election, at
+    any checkpoint, is still PENDING. An INCONCLUSIVE becomes SUPERSEDED through a PASS of the same rule at a higher
+    checkpoint, or at the same checkpoint recorded later; a FAIL never.
+  - There is no way to resolve a FAIL or to void an election: such an election stays TALLIED. An election that cannot
+    go on for another reason (never opened before window_end, a rejected TALLY or CLOSE_FINAL checkpoint) also stays in
+    its state. The status values RESOLVED and CONFIRMED_ISSUE exist in the contract interface but cannot be reached;
+    the Gateway answers 501 for `/v1/proposals*` and `/v1/finding-records/{id}/reviews`.
+  - A roster change after freeze cannot be made through the system (roster `PUT` is refused after DRAFT); a change
+    made directly in the database is detected by the Rule Engine (T05).
+- **Affects:** `docs/decisions.md` / `.ko.md` (D-11, D-24, D-28 notes), `contracts/README.md`, `contracts/chain-interface.md`, `contracts/hashing.md`, `contracts/core-api.openapi.yaml`, `contracts/ledger-gateway.openapi.yaml`, `contracts/finding.schema.json` (description text only), `contracts/CHANGELOG.md`, `docs/schedule.md`, `docs/system-design.md` / `.ko.md`, `docs/data-flow.ko.md`, `docs/threat-model.md`, `docs/roles/core-web.md`, `docs/roles/ledger.md`, `docs/design-proposal.ko.md`, `docs/deployment.ko.md`

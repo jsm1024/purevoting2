@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://purevoting2.local/contracts/finding.schema.json",
   "title": "Finding (stored)",
-  "description": "A stored finding = FindingSubmission (the Rule Engine registers its hash at the Gateway, which emits FINDING_RECORDED, and stores the body at Core) + `review`, aggregated by Core from FINDING_REVIEWED ledger events signed by organizations. Rule inputs and formulas: contracts/README.md#audit-rules.",
+  "description": "A stored finding = FindingSubmission (the Rule Engine registers its hash at the Gateway, which emits FINDING_RECORDED, and stores the body at Core) + `review`, aggregated by Core from FINDING_REVIEWED ledger events signed by organizations (signed reviews: out of scope in this version, D-31). Rule inputs and formulas: contracts/README.md#audit-rules.",
   "$ref": "#/$defs/Finding",
   "$defs": {
     "FindingBody": {
@@ -219,7 +219,7 @@
         "status",
         "reviews"
       ],
-      "description": "status = the contract's findingRecord status as exposed by the Gateway (contract_status); Core lists the FINDING_REVIEWED events as `reviews` but does not re-derive the status. Rules, for reference: built from FINDING_REVIEWED ledger events (submitted through Core or directly on chain). Precedence: any CONFIRMED_ISSUE review by a participating organization → CONFIRMED_ISSUE; else RESOLVED when >= approval_threshold participating organizations of the election other than operator_org recorded DISMISSED or ACCEPTED_RISK; else SUPERSEDED for an INCONCLUSIVE finding when a PASS finding of the same rule exists at a higher committed checkpoint, or at the same checkpoint but recorded later (a re-run after the cause cleared — the only way to supersede at the TALLY checkpoint); FAIL is never superseded; else PENDING.",
+      "description": "Out of scope in this version (D-31): signed reviews are not implemented; `reviews` is always empty and RESOLVED / CONFIRMED_ISSUE cannot be reached. Core's review.status stays as stored (NOT_REQUIRED for PASS, PENDING for FAIL / INCONCLUSIVE); SUPERSEDED appears only in the Gateway's contract_status. status = the contract's findingRecord status as exposed by the Gateway (contract_status); Core lists the FINDING_REVIEWED events as `reviews` but does not re-derive the status. Rules, for reference: built from FINDING_REVIEWED ledger events (submitted through Core or directly on chain). Precedence: any CONFIRMED_ISSUE review by a participating organization → CONFIRMED_ISSUE; else RESOLVED when >= approval_threshold participating organizations of the election other than operator_org recorded DISMISSED or ACCEPTED_RISK; else SUPERSEDED for an INCONCLUSIVE finding when a PASS finding of the same rule exists at a higher committed checkpoint, or at the same checkpoint but recorded later (a re-run after the cause cleared — the only way to supersede at the TALLY checkpoint); FAIL is never superseded; else PENDING.",
       "properties": {
         "status": {
           "type": "string",

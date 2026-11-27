@@ -15,6 +15,8 @@ The Solidity interface is normative for EVM platforms: D-02 A (Besu) and D-02 C 
 v1.1). For Fabric (D-02 B) the chaincode would expose functions with the same names, arguments and return fields
 (JSON). The implementation (Harits) may add functions but must not change these. `tools/validate_contracts.py` checks that the interface below has no duplicate function names.
 
+**Scope note (D-31, 2026-11-27).** Out of scope in this version: `proposalState`, `submitDecision`, `submitFindingReview`, `openProposal`, `failAction`, `executeAction`, `amendRoster`, `voidElection`, `relayDecision`, `relayFindingReview` and the events `ProposalDecided`, `FindingReviewed` (`changeWindow` and the early close with a proposal stay out under D-28). They are kept below, marked, and are not in the deployed contract. `finalizeElection` reverts `FindingsUnresolved` while any FAIL / INCONCLUSIVE finding of the election is PENDING (only an INCONCLUSIVE can become SUPERSEDED); status RESOLVED and CONFIRMED_ISSUE cannot be reached.
+
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
@@ -55,6 +57,7 @@ interface IPureVotingLedger {
     );
 
     // ---- governance (read) ----
+    // Out of scope in this version (D-31): not implemented. (proposalState)
     function proposalState(bytes32 proposalId) external view returns (
         uint8 status,              // 0 PENDING, 1 APPROVED, 2 REJECTED, 3 EXPIRED
         bytes32 targetHash, uint8 approvals, bool executed
@@ -67,6 +70,7 @@ interface IPureVotingLedger {
     // ---- direct submission (anyone may send; the signature is what counts) ----
     // Every decision / review counts only if orgId is a participating organization of that election.
     // The contract rebuilds the digest from these arguments exactly as in hashing.md and checks the registry key.
+    // Out of scope in this version (D-31): not implemented. (submitDecision)
     function submitDecision(
         bytes32 proposalId, bytes32 actionId, bytes32 electionId, uint8 actionType, bytes32 targetHash,
         bytes32 orgId, uint8 decision, bytes calldata signature
@@ -79,6 +83,7 @@ interface IPureVotingLedger {
                   // refused while no checkpoint is committed yet, see "Checkpoint 0"),
                   // so the Gateway can index the real ID strings; a second record for the same findingId is a no-op if
                   // findingHash is identical and reverts otherwise
+    // Out of scope in this version (D-31): not implemented. (submitFindingReview)
     function submitFindingReview(
         bytes32 findingId, bytes32 electionId, bytes32 findingHash, bytes32 orgId, uint8 decision,
         bytes32 noteHash, bytes calldata signature
@@ -100,6 +105,7 @@ interface IPureVotingLedger {
         // ELECTION_CLOSED(ALL_VOTED) (decisions v1.5): early=true with proposalId = 0, closedAt bucket-aligned and
         // < windowEnd, block time >= closedAt (else TIME_NOT_REACHED); windowEnd becomes closedAt (effective end). The
         // contract cannot see turnout, so R4 is to check the all-voted condition from the CLOSE_FINAL checkpoint counts (R4 check not implemented yet, Anik)
+    // Out of scope in this version (D-31): not implemented. (openProposal, failAction, executeAction, amendRoster)
     function openProposal(bytes32 proposalId, bytes32 actionId, bytes32 electionId, uint8 actionType, bytes32 targetHash,
         bytes32 requestingOrgId, bytes calldata requestSignature) external;
         // expiresAt = block time + proposalTtlHours (stored by the contract); decisions after expiresAt are refused and the
@@ -107,6 +113,7 @@ interface IPureVotingLedger {
     function failAction(bytes32 proposalId, uint64 coreSeq) external;   // ADMIN_ACTION_FAILED: approved proposal can no longer be executed
     function executeAction(bytes32 proposalId, uint64 coreSeq) external;  // APPROVED, not yet executed (else ALREADY_EXECUTED); opens the effect window
     function amendRoster(bytes32 electionId, bytes32 proposalId, bytes32 rosterHashBefore, bytes32 rosterHashAfter, uint64 coreSeq) external;
+    // (end of the D-31 group above; changeWindow below is out under D-28, the lines after it are in scope)
     function changeWindow(bytes32 electionId, bytes32 proposalId, uint64 newWindowEnd, uint64 coreSeq) external; // newWindowEnd bucket-aligned; extension rejected once block time >= current end
     function setTokenSetRoot(bytes32 electionId, bytes32 tokenSetRoot, bytes32 proposalIdOrZero, uint64 coreSeq) external;
     function commitCheckpoint(bytes32 electionId, uint64 checkpoint, uint8 reason, bytes32 tablesHash, uint64 coreSeq) external;
@@ -117,24 +124,28 @@ interface IPureVotingLedger {
         // CLOSED→TALLIED commits one checkpoint with reason TALLY (not an extra STATE_CHANGE)
         // reason TALLY: only while status == TALLIED and at most once per election (a second one reverts
         // TallyCheckpointAlreadyCommitted); finalizeElection uses this checkpoint. If the TALLY checkpoint is rejected,
-        // Core stays TALLIED without a TALLY checkpoint, finalizeElection cannot succeed, and only ELECTION_VOID remains.
+        // Core stays TALLIED without a TALLY checkpoint, finalizeElection cannot succeed, and only ELECTION_VOID remains
+        // (out of scope in this version, D-31: the election stays TALLIED).
         // reason CLOSE_FINAL: at most once per election and only while status == CLOSED (v1.1). Consequence: if
         // ELECTION_CLOSED was rejected, Core stays CLOSED (strict) but its CLOSE_FINAL is rejected too, so no tally is
-        // possible and ELECTION_VOID is the only exit (README state machine) — intended
+        // possible and ELECTION_VOID is the only exit (README state machine) — intended (D-31: out of scope, it stays CLOSED)
     function commitAnchor(bytes32 electionId, bytes32 anchorId, bytes32 merkleRoot, bytes32 rejectionsRoot, uint8 mode,
         uint32 eventCount, uint64 bucketMin, uint64 bucketMax) external; // batched: bucketMax + bucket <= effective end
     function publishTally(bytes32 electionId, bytes32 resultHash, uint64 finalCheckpoint, uint64 coreSeq) external; // once only; finalCheckpoint == the CLOSE_FINAL checkpoint
-    function finalizeElection(bytes32 electionId, bytes32 resultHash, uint64 coreSeq) external; // equals tally; finding quorum (README)
+    function finalizeElection(bytes32 electionId, bytes32 resultHash, uint64 coreSeq) external; // equals tally; finding quorum (README) (review quorum out of scope, D-31: only SUPERSEDED closes a finding)
+    // Out of scope in this version (D-31): not implemented. (voidElection, relayDecision)
     function voidElection(bytes32 electionId, bytes32 proposalId, uint64 coreSeq) external; // allowed from DRAFT, ROSTER_FROZEN, OPEN, CLOSED, TALLIED
     function relayDecision(bytes32 proposalId, bytes32 orgId, uint8 decision, bytes calldata signature) external;   // same checks as submitDecision
     function relayFindingRecord(bytes32 findingId, bytes32 electionId, uint8 ruleId, uint8 result, uint64 findingCheckpoint,
         bytes32 findingHash, bytes calldata signature, string calldata findingIdText, string calldata electionIdText) external;     // same checks as submitFindingRecord
+    // Out of scope in this version (D-31): not implemented. (relayFindingReview)
     function relayFindingReview(bytes32 findingId, bytes32 electionId, bytes32 findingHash, bytes32 orgId, uint8 decision,
         bytes32 noteHash, bytes calldata signature) external;        // same checks as submitFindingReview
 
     // ---- events (indexed for log queries; carry everything the Gateway needs to index them) ----
     event AnchorCommitted(bytes32 indexed electionId, bytes32 indexed anchorId, bytes32 merkleRoot, bytes32 rejectionsRoot, uint8 mode, uint32 eventCount);
     event StateChanged(bytes32 indexed electionId, uint8 status, uint64 coreSeq);
+    // Out of scope in this version (D-31): not implemented. (ProposalDecided, FindingReviewed)
     event ProposalDecided(bytes32 indexed proposalId, bytes32 indexed orgId, uint8 decision, bytes signature);
     event FindingRecorded(bytes32 indexed findingId, bytes32 indexed electionId, uint8 ruleId, uint8 result, uint64 findingCheckpoint, bytes32 findingHash, bytes signature, string findingIdText, string electionIdText);
     event FindingReviewed(bytes32 indexed findingId, bytes32 indexed orgId, uint8 decision, bytes32 noteHash, bytes signature);
@@ -147,14 +158,16 @@ interface IPureVotingLedger {
 |---|---|
 | `bytes32` IDs (`electionId`, `anchorId`, `proposalId`, `actionId`, `findingId`, `orgId`) | `idh(id) = sha256(utf8(id string))` — the same `idh` used inside signed digests (hashing.md) |
 | `bytes32` hashes (`targetHash`, `findingHash`, `noteHash`, roots) | the 64-hex SHA-256 value as raw 32 bytes |
-| `actionType` | ROSTER_AMEND 1, TOKEN_REISSUE 2, WINDOW_CHANGE 3, ELECTION_CLOSE_EARLY 4, ELECTION_VOID 5 |
-| `decision` in `submitDecision` / `ProposalDecided` | APPROVE 1, REJECT 2 |
-| `decision` in `submitFindingReview` / `FindingReviewed` | DISMISSED 1, ACCEPTED_RISK 2, CONFIRMED_ISSUE 3 |
+| `actionType` (out of scope, D-31) | ROSTER_AMEND 1, TOKEN_REISSUE 2, WINDOW_CHANGE 3, ELECTION_CLOSE_EARLY 4, ELECTION_VOID 5 |
+| `decision` in `submitDecision` / `ProposalDecided` (out of scope, D-31) | APPROVE 1, REJECT 2 |
+| `decision` in `submitFindingReview` / `FindingReviewed` (out of scope, D-31) | DISMISSED 1, ACCEPTED_RISK 2, CONFIRMED_ISSUE 3 |
 | `ruleId`, `result` | R1–R5 → 1–5; PASS 0, FAIL 1, INCONCLUSIVE 2 |
 | timestamps | Unix seconds (UTC) |
 | `signature` | 65 bytes r ‖ s ‖ v (eip191-secp256k1) |
 
 ## Execution order of approved actions (normative)
+
+Out of scope in this version (D-31): not implemented.
 
 1. `executeAction(proposalId)` first (ledger: ADMIN_ACTION_EXECUTED). It marks the proposal executed and opens its
    **effect window**.
@@ -273,6 +286,8 @@ the **logical boundary time T** as occurred_at, even if Core processes it slight
 
 ## Matching of direct submissions
 
+Out of scope in this version (D-31): not implemented. (`submitDecision`, `submitFindingReview`)
+
 `submitDecision` must carry the stored proposal's actionId, electionId, actionType and targetHash; `submitFindingReview`
 must carry the stored record's electionId and findingHash. Any mismatch reverts.
 
@@ -284,9 +299,11 @@ allowed only once). Core detects this — every ledger event with source `core` 
 `event_id` and `payload_hash`, otherwise Core raises an alert and stops the election's FIFO — and R5 compares the
 contract's `electionStateAtCheckpoint(k)` (status, windowEnd, rosterHash, tokenSetRoot, resultHash) with the ledger
 events up to its lastCoreSeq, which catches a Gateway calling the contract with arguments that differ from the events — but neither prevents it;
-recovery is ELECTION_VOID. This trust assumption is listed in threat-model I12 and D-26.
+recovery is ELECTION_VOID (out of scope in this version, D-31). This trust assumption is listed in threat-model I12 and D-26.
 
 ## Indexing by the Gateway
+
+Out of scope in this version (D-31): not implemented. (`ProposalDecided`, `FindingReviewed` and the note attachment)
 
 The Gateway turns chain events into ledger events: `ProposalDecided` → APPROVAL_RECORDED, `FindingRecorded` →
 FINDING_RECORDED, `FindingReviewed` → FINDING_REVIEWED (payload `submitted_via: chain` when the transaction did not come

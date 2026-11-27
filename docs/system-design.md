@@ -104,6 +104,7 @@ model are theirs to choose.
 DRAFT ──freeze roster──> ROSTER_FROZEN ──window start──> OPEN ──window end / early close──> CLOSED ──tally──> TALLIED ──finalize──> FINALIZED
   └────────────── void with multi-org approval (ELECTION_VOID) ──────────────> VOIDED
 ```
+Voiding: out of scope in this version (D-31): not implemented.
 
 - **Strict transitions** (freeze roster, close, window shortening): Core applies them at once. If the ledger rejects them,
   Core does not roll back; it raises an alert and a human resolves it.
@@ -138,6 +139,7 @@ Gateway ──> contract: anchor the batch Merkle root → receipt status ANCHOR
   - Views are always read "as of checkpoint k"; reading the same k always returns the same result.
 
 ### 3.5 Approving admin actions
+Out of scope in this version (D-31): not implemented. (also the void in 3.1)
 1. An admin of the requesting organization drafts the action (roster amendment, void, …), signs it with the
    organization's key and submits it. A proposal is opened on the ledger.
 2. Approvers of other organizations check the target on screen; their client recomputes the hash before they sign.
@@ -149,7 +151,8 @@ Gateway ──> contract: anchor the batch Merkle root → receipt status ANCHOR
 ### 3.6 Auditing
 1. Once a checkpoint is applied on the ledger and its events are anchored, the Rule Engine runs R1–R5.
 2. It signs each result (finding) and registers it on the ledger; the body is stored at Core.
-3. A FAIL or INCONCLUSIVE finding is resolved only by signed reviews from 2 organizations other than the commission.
+3. A FAIL or INCONCLUSIVE finding is resolved only by signed reviews from 2 organizations other than the commission
+   (signed reviews: out of scope in this version, D-31; only the supersession of an INCONCLUSIVE applies).
    An INCONCLUSIVE finding superseded by a later PASS of the same rule also counts as resolved.
 4. If a rule cannot run (ledger behind, Gateway unreachable), only an alert is recorded instead of a finding.
 
@@ -168,7 +171,8 @@ Gateway ──> contract: anchor the batch Merkle root → receipt status ANCHOR
    - R1–R5 findings at the TALLY checkpoint are all recorded;
    - no unresolved FAIL / INCONCLUSIVE remains;
    - no CONFIRMED_ISSUE exists.
-4. If a problem is confirmed, the only exit is voiding (VOID).
+4. If a problem is confirmed, the only exit is voiding (VOID) (voiding out of scope in this version, D-31; an election
+   with a FAIL stays TALLIED).
 
 ---
 
@@ -265,7 +269,7 @@ The platform (D-02) and the AI model (D-15) are chosen by their owners. All othe
 
 | Item | Content |
 |---|---|
-| Mandatory | Election state machine, roster and link issuance, redeem / ballot (two schemas), outbox (FIFO, seq, retries, per-bucket release), checkpoints and snapshot hashes, view API (`?checkpoint=k`), creation check, executing admin actions (ROSTER_AMEND, ELECTION_VOID), tally and finalization, storing finding bodies and relaying reviews, voter web and admin web (including approval signing) |
+| Mandatory | Election state machine, roster and link issuance, redeem / ballot (two schemas), outbox (FIFO, seq, retries, per-bucket release), checkpoints and snapshot hashes, view API (`?checkpoint=k`), creation check, executing admin actions (ROSTER_AMEND, ELECTION_VOID) (out of scope in this version, D-31), tally and finalization, storing finding bodies and relaying reviews, voter web and admin web (including approval signing) |
 | Optional | WINDOW_CHANGE, ELECTION_CLOSE_EARLY, TOKEN_REISSUE, AI report storage and review screen, service logs |
 | Reference files | `core-api.openapi.yaml`, `contracts/README.md` (state machine, checkpoints, consistency model), `hashing.md`, `ledger-events.schema.json` |
 | Counterpart during development | Gateway mock (`ledger-gateway.openapi.yaml`) |
@@ -303,9 +307,10 @@ finished by 2026-11-30. Milestones, per-owner dates, handoffs and fallbacks are 
 |---|---|---|
 | M1 | 11-11 | Integration 1: T01 on the real stack |
 | M2 | 11-19 | **Demo version** (normal election finalized; T05 / T08 faults detected, finalize refused) |
-| M3 | 11-26 | Mandatory scope complete (roster amendment, voiding, signed reviews; T01, T02, T04, T05, T08, T15) |
+| M3 | 11-26 | Mandatory scope complete (roster amendment, voiding, signed reviews; T01, T02, T04, T05, T08, T15) (2026-11-27: ROSTER_AMEND/ELECTION_VOID and signed reviews removed from scope, D-31) |
 
-**Mandatory:** normal vote, roster amendment, voiding, rules R1–R5, tests T01, T02, T04, T05, T08, T15.
+**Mandatory:** normal vote, roster amendment, voiding, rules R1–R5, tests T01, T02, T04, T05, T08, T15
+(v1.8: roster amendment and voiding out of scope, D-31).
 **Not built (D-28):** window change, early close with approval (the close once every voter has voted is built, decisions v1.5), link reissue, direct chain submissions, the remaining tests. AI Audit
 Agent: zero cost only (D-15 v1.2) — a local free model, else a template report, else future work.
 

@@ -22,7 +22,7 @@ The M2 demo happens on 11-19 whatever the verdict; what is claimed in it follows
 |---|---|---|---|
 | M1 | **Wed 11-11** | Integration 1: T01 on the real stack | On Seungmin's PC, with the kit binary in `ledger/bin/`, the bootstrap (`docker compose -f docker-compose.yml -f docker-compose.integration.yml run --rm registry-setup`) and then `... up` (two commands, `tests/scenarios/T01/README.md`) start the nodes, contract deploy, registry setup, staff setup (after registry setup), Core, Gateway and Rule Engine; T01 label committed before the run; `tests/scenarios/T01/setup.py --config quick`: creation check PASSED against the real Gateway and observer node, ELECTION_OPENED applied (RETRY_LATER allowed, never REJECTED), receipts ANCHORED, R1–R5 findings recorded on chain and stored in Core. Reported as "T01 (partial R4/R5)" if R4 / R5 are incomplete |
 | M2 | **Thu 11-19** | **Demo version** | From a clean `docker compose up`, demo configuration (100 voters, 10-minute window, 60 s bucket and checkpoint). **Election E1 (normal):** admin web: create, roster, freeze, link CSV; voter web: vote, receipt ANCHORED; close, tally, R1–R5 PASS at TALLY, **finalize succeeds** (no FAIL / INCONCLUSIVE, so no review is needed). **Election E2 (faults):** T05 **DB-edit variant** (row added after freeze → R4 / R5 FAIL) and T08 **(a) and (b)** (row changed after its checkpoint was committed and audited → R5 `tables_mismatched` / `row_ledger_mismatches`; sealed bytes changed → `sealed_hash_mismatches`); after tally, **finalize is refused (FINDINGS_UNREVIEWED)**. **Audit report in E2 (D-15 v1.2):** the `audit-agent` compose service writes a report file for each E2 FAIL finding within 10 minutes of the finding being stored, made by the local free model if the 11-13 check passed, otherwise by the template (shown as "not AI"); the demo shows one report and the finding it cites; it is advisory, finalize never depends on it; no report at all → M2 CONDITIONAL. Demo script with a minute-by-minute timetable (change → audited checkpoint → FAIL at the next run → audit report, so the demo never waits for it). **Every web screen demonstrable (part B, same day):** on the mock stack (`docker compose -p pv-demo-b --profile mock up`, fake Gateway, its own project name so its database and the seeded findings never mix with part A; switch rehearsed on 11-18; part A uses `docker compose -f docker-compose.yml -f docker-compose.integration.yml up`), election E3: ROSTER_AMEND and ELECTION_VOID through the approval screen (organization signatures, EIP-191) and the review screen for a FAIL finding, after which finalize succeeds; shown as "chain side from M3" (the real contract checks arrive 11-23 / 11-25); the demo script says the fake checks signatures off chain, its findings come from a seed script (no Rule Engine on the mock stack) and the contract's refusal of an unapproved ROSTER_AMENDED (T05) is shown only from M3. Not on any screen: window change, early close, link reissue (not built) and the audit report screen (future work; the report file is shown). Full T01 PASS (R1–R5 complete); if R4 / R5 are still partial, M2 is CONDITIONAL |
-| M3 | **Thu 11-26** | Mandatory scope complete | ROSTER_AMEND and ELECTION_VOID with organization signatures (approval screen → Core relay → contract signature check → execution order); signed reviews of FAIL / INCONCLUSIVE findings (review screen → contract → FINDING_REVIEWED); T01, T02, T04, T05 (all variants), T08 (a)(b)(c), T15 (a)–(d) give their labelled results; every label committed before its first run |
+| M3 | **Thu 11-26** | Mandatory scope complete | ROSTER_AMEND and ELECTION_VOID with organization signatures (approval screen → Core relay → contract signature check → execution order); signed reviews of FAIL / INCONCLUSIVE findings (review screen → contract → FINDING_REVIEWED); T01, T02, T04, T05 (all variants), T08 (a)(b)(c), T15 (a)–(d) give their labelled results; every label committed before its first run (2026-11-27: ROSTER_AMEND/ELECTION_VOID and signed reviews removed from scope, D-31) |
 
 ## 3. Plan per owner
 
@@ -43,8 +43,8 @@ new date (section 4).
 | Wed 11-18 | M2 rehearsal |
 | Thu 11-19 | **M2 demo** |
 | **Fri 11-20** | **T02, T04, T15 labels** (T15 from Seungmin's injection memo of 11-18) |
-| **Mon 11-23** | Proposals: `openProposal`, decisions with approval-signature checks, execution order, `amendRoster`, `voidElection`; ADMIN_ACTION_REQUESTED / APPROVAL_RECORDED / PROPOSAL_CLOSED (APPROVED only after all are stored), indexing of `ProposalDecided`; contract refusal of an unapproved ROSTER_AMENDED (T05). Endpoints and payloads exactly as `contracts/ledger-gateway.openapi.yaml` v1.1 (Seungmin's fake follows the same file); any change goes through `contracts/CHANGELOG.md` and is told to Seungmin the same day |
-| **Wed 11-25** | Signed finding reviews (contract, relay, `FindingReviewed` → FINDING_REVIEWED), finalize quorum; T04 Gateway refusals, T15 (d) refusal; same OpenAPI rule as 11-23 |
+| **Mon 11-23** | Proposals: `openProposal`, decisions with approval-signature checks, execution order, `amendRoster`, `voidElection`; ADMIN_ACTION_REQUESTED / APPROVAL_RECORDED / PROPOSAL_CLOSED (APPROVED only after all are stored), indexing of `ProposalDecided`; contract refusal of an unapproved ROSTER_AMENDED (T05). Endpoints and payloads exactly as `contracts/ledger-gateway.openapi.yaml` v1.1 (Seungmin's fake follows the same file); any change goes through `contracts/CHANGELOG.md` and is told to Seungmin the same day (out of scope in this version, D-31) |
+| **Wed 11-25** | Signed finding reviews (contract, relay, `FindingReviewed` → FINDING_REVIEWED), finalize quorum; T04 Gateway refusals, T15 (d) refusal; same OpenAPI rule as 11-23 (out of scope in this version, D-31) |
 | Thu 11-26 | M3 run |
 | Fri 11-27 – Mon 11-30 | Fixes from the M3 review and the experiment runs |
 
@@ -62,7 +62,7 @@ new date (section 4).
 | Wed 11-18 | M2 rehearsal: E2 shows T05 → R4 / R5 FAIL, T08 (a)(b) → R5 FAIL, and an audit report for an E2 FAIL finding |
 | Thu 11-19 | **M2 demo** |
 | Fri 11-20 – Tue 11-24 | Audit agent fixes from the M2 review only while the 11-25 work below is not at risk |
-| **Wed 11-25** | R4 approval-signature checks for admin actions; T02, T04, T15 give the labelled results |
+| **Wed 11-25** | R4 approval-signature checks for admin actions; T02, T04, T15 give the labelled results (approval-signature part out of scope in this version, D-31) |
 | Thu 11-26 | M3 run |
 | Fri 11-27 – Mon 11-30 | Experiment runs and tables (section 5) with Seungmin; fixes; B2 runs only if the go was confirmed on 11-17 |
 
@@ -82,7 +82,7 @@ new date (section 4).
 | Thu 11-19 | **M2 demo** |
 | Fri 11-20 | T15 script (first, so its results can be checked against Harits's label; the label is committed before the script's first run) |
 | Mon 11-23 | Funnel test (D-29): a device on another network votes end to end through the Funnel address; link order (Funnel → `VOTER_WEB_URL` → Core → links) written in the README |
-| **Tue 11-24** | Admin actions and reviews moved from the fake Gateway to the real one (Harits's proposals 11-23; reviews follow on 11-25), differences from the fake fixed on both sides |
+| **Tue 11-24** | Admin actions and reviews moved from the fake Gateway to the real one (Harits's proposals 11-23; reviews follow on 11-25), differences from the fake fixed on both sides (out of scope in this version, D-31) |
 | Wed 11-25 | `evidence_check`, outbox resume; T02, T04, T05 (API variant), T08 (c) scripts (the team lead may hand part of the scripts to Harits or Anik) |
 | Thu 11-26 | **M3 run** and supervisor review |
 | Fri 11-27 – Mon 11-30 | Experiment runs (section 5), Seungmin runs them, Anik builds the tables; fixes; README run steps (`docker compose up` → demo E1 + E2); everything finished by 11-30 |
@@ -99,7 +99,7 @@ new date (section 4).
 | M2 | Rule Engine reads, publishTally / finalize | Harits | 11-16 |
 | M2 | R4 / R5 complete | Anik | 11-16 |
 | M3 | T02, T04, T15 labels | Harits | 11-20 |
-| M3 | Proposals + signature checks / reviews | Harits | 11-23 / 11-25 |
+| M3 | Proposals + signature checks / reviews (out of scope in this version, D-31) | Harits | 11-23 / 11-25 |
 | M2 | Template report generator + `audit-agent` compose block | Anik | 11-12 |
 | M2 | AI go / no-go (local model or template) | Anik | 11-13 |
 | M2 | Audit agent integrated (local model if go) | Anik | 11-17 |

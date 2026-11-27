@@ -1,4 +1,4 @@
-# 결정 사항 목록 (v1.3, 한국어 원본)
+# 결정 사항 목록 (v1.8, 한국어 원본)
 
 > 영어판 `decisions.md`가 기준입니다(D-19). 이 파일은 한국어 원본으로, 감독관 검토 이력을 포함합니다.
 > 2026-10-18 v1.0: 감독관 검토(DECISIONS VERDICT: READY TO CONFIRM)를 거쳐 D-02·D-15를 뺀 모든 항목을 **추천안으로 확정**했습니다. 확정하면서 보완한 문구는 각 항목의 `확정 보완(v1.0)`에 있습니다. D-02는 Harits, D-15는 Anik에게 위임했습니다.
@@ -30,6 +30,7 @@
 > v1.5 (2026-11-11): D-11 예외 — 모든 유권자가 투표하면(모든 ACTIVE 유권자에게 토큰이 있고, 토큰 전부 사용, 모든 투표권에 표 있음, 마지막 구간 제외) 운영 기관 관리자가 제안 없이 종료 시각 전에 마감할 수 있음(ELECTION_CLOSED reason ALL_VOTED). 표를 잃는 유권자가 없음. R4가 조건을 다시 검사할 예정(아직 미구현, Anik). 팀장 결정
 > v1.6 (2026-11-12): D-30 추가 — 표를 세 기관 공동 키의 지수형 ElGamal 암호문(후보별 0/1, 유효성 증명 포함)으로 바꾸고, 후보별 합계만 기관마다 증명이 붙은 조각으로 복호화함. 통째의 개인키는 어디에도 없음. D-08·D-23은 `BALLOT_SCHEME=SEALED_BOX_V1`(되돌리기 설정)일 때만 적용. 팀장 결정. 이전 구현은 `sealedbox-baseline` 태그로 보관
 > v1.7 (2026-11-20): D-30 — 기관마다 자기 계정으로 웹에 로그인해 자기 브라우저에서 복호화함(trustee 도구와 같은 검사, 열쇠 파일은 브라우저 안에서만 읽고 올리지 않음). 공개 입구가 Gateway 읽기 경로 두 개(`/ledger/v1/events`, `/ledger/v1/nodes`)를 호출자의 읽기 전용 키 그대로 중계함. 팀장 결정
+> v1.8 (2026-11-27): D-31 추가 — 기관 서명·제안·승인을 거치는 관리 행위(ROSTER_AMEND, ELECTION_VOID)와 finding 서명 검토, 그에 따른 확정 정족수를 이번 버전 범위에서 제외함. `contracts/`의 정의는 지우지 않고 "Out of scope in this version (D-31)"로 표시함. D-11·D-24에 표시. 팀장 결정
 
 ## 요약
 
@@ -45,7 +46,7 @@
 | D-08 | 투표 암호화 | 선거 공개키로 봉인(libsodium sealed box), 마감 후 복호화 (v1.6: 기본은 D-30, `BALLOT_SCHEME=SEALED_BOX_V1`일 때만) | 승민 | 확정 (v1.6: 기본값은 D-30으로 대체) |
 | D-09 | 링크·투표권 분실 시 정책 | **사용된 링크는 절대 재활성화하지 않음**. 미사용 링크 분실만 승인 후 재발급(TOKEN_REISSUE). 투표권 분실은 기권 처리 | 승민 | 확정 |
 | D-10 | 투표 쪽 시각 정밀도 | 원장·view에는 시간 구간으로 내림한 시각과 체크포인트 번호만 기록(웹은 구간 60초 고정, v1.4부터 명단 크기에 따른 강제 없음), 투표 기간 경계는 구간에 맞춤 | 승민·Harits·Anik | 확정(v1.4 변경) |
-| D-11 | 승인 대상·기준·서명 | 명단 정정·링크 재발급·기간 변경·조기 마감, **요청 기관 외** 2개 기관 승인, 각 기관이 자기 키로 서명 (v1.5: 모두 투표하면 승인 없이 마감 가능) | Harits·승민 | 확정 |
+| D-11 | 승인 대상·기준·서명 | 명단 정정·링크 재발급·기간 변경·조기 마감, **요청 기관 외** 2개 기관 승인, 각 기관이 자기 키로 서명 (v1.5: 모두 투표하면 승인 없이 마감 가능. v1.8: 범위 제외, D-31) | Harits·승민 | 확정 (v1.8: 범위 제외, D-31) |
 | D-12 | Core ↔ 원장 일관성 | Outbox + 순번(seq), 엄격 전이는 즉시 적용·거부돼도 유지(경보), 허용 전이는 원장 수락 후 적용·거부 시 되돌림 | 승민·Harits | 확정 |
 | D-13 | 규칙 엔진 데이터 접근 | Core의 읽기 전용 view(체크포인트 기준) + Gateway 조회 API, DB 직접 접근 없음 | Anik·승민 | 확정 |
 | D-14 | 규칙 검사·체크포인트 주기 | 체크포인트 주기 = 시간 구간의 정수배(기본 1배) + 상태 변경 시, 규칙은 체크포인트마다 + 마감 직후 + 수동 | Anik·승민 | 확정 |
@@ -58,13 +59,14 @@
 | D-21 | 기관 서명키 등록·보관 | 각 기관 노드 계정이 **체인의 기관 레지스트리**에 자기 키를 등록, 선관위는 키를 지정할 수 없음. 키는 각 기관 승인자가 보관 | Harits·승민 | 확정 |
 | D-22 | 투표 쪽 위반 판정 주체 | 개별 투표 이벤트 검사(기간·중복)는 Gateway 소프트웨어, 체인은 배치의 시간 범위와 시스템 이벤트(상태 머신·승인 서명)를 검사 | Harits | 확정 |
 | D-23 | 선거 개인키 보관 | MVP: 선관위 단독 보관, **개표 후 키를 공개**해 감사자가 재집계(R5). 임계값 복호화는 향후 과제 (v1.6: D-30에는 통째의 개인키가 없음) | 승민 | 확정 (v1.6: SEALED_BOX_V1만) |
-| D-24 | 확정(finalize) 조건·검토 권한 | finding을 원장에 기록(규칙 엔진이 직접), FAIL/INCONCLUSIVE는 **운영 기관(선관위) 외 기관**의 서명 검토가 임계값 이상 있어야 해결. 스마트 계약이 확정 시 확인. AI 보고서는 선택 | 승민·Anik·Harits | 확정 |
+| D-24 | 확정(finalize) 조건·검토 권한 | finding을 원장에 기록(규칙 엔진이 직접), FAIL/INCONCLUSIVE는 **운영 기관(선관위) 외 기관**의 서명 검토가 임계값 이상 있어야 해결. 스마트 계약이 확정 시 확인. AI 보고서는 선택 (v1.8: 서명 검토와 정족수는 범위 제외, D-31) | 승민·Anik·Harits | 확정 (v1.8: 검토는 범위 제외, D-31) |
 | D-25 | 규칙 엔진 운영 주체 | 규칙 엔진 키(ruleKey)는 선관위와 Gateway 운영 기관이 아닌 기관이 보관·운영(시연: 참관인, v1.1) | 전원 | 확정(v1.1) |
 | D-26 | Gateway 운영 주체 | 중립 기관 운영. 운영자는 전달을 늦출 수 있지만 서명된 승인·검토·finding은 위조할 수 없고, 서명자는 체인에 직접 제출 가능 | Harits | 확정 |
 | D-27 | 확정 깊이 | 블록 위에 D개 이상 쌓인 블록의 체인 정보만 인정(D = 2, *잠정*). 계약 주소처럼 배포 설정에 고정 | Harits, 승민, Anik | 확정(v1.1) |
-| D-28 | 일정 압축 | 데모 버전 2026-11-19, 모든 작업은 2026-11-30까지. 단계 M1–M3, 담당별 날짜, 넘겨주는 항목, 대체안은 `docs/schedule.md`. 선택 기능은 만들지 않음, 실험 축소, 필수 범위는 그대로 | 전원 | 확정(v1.2) |
+| D-28 | 일정 압축 | 데모 버전 2026-11-19, 모든 작업은 2026-11-30까지. 단계 M1–M3, 담당별 날짜, 넘겨주는 항목, 대체안은 `docs/schedule.md`. 선택 기능은 만들지 않음, 실험 축소, 필수 범위는 그대로(v1.8: 명단 정정·무효는 범위에서 제외, D-31) | 전원 | 확정(v1.2) |
 | D-30 | 선관위에 대한 투표 비밀 | 지수형 ElGamal 표(후보별 0/1 암호문 + 유효성 증명)를 세 기관 키의 합으로 암호화. Core가 암호문인 채로 더하고, 후보별 합계만 기관마다 증명이 붙은 조각을 보내 복호화. 통째의 키를 가진 곳이 없음. 체인·계약은 그대로 | 승민 | 확정(v1.6) |
 | D-29 | 공개 접속 | 스택은 데모 PC에서 실행. compose `web` 서비스(nginx: 빌드된 웹 + Core `/v1/`. v1.7: Gateway 읽기 경로 2개 추가, D-30)가 유일한 입구이고, 무료 **Tailscale Funnel**로 HTTPS 공개(팀 시험은 Tailscale Serve). 클라우드 호스팅 안 함 | 승민 | 확정(v1.3) |
+| D-31 | 이번 버전의 범위 (v1.8) | 기관 서명·제안·승인을 거치는 관리 행위(ROSTER_AMEND, ELECTION_VOID)와 finding 서명 검토, 그에 따른 확정 정족수는 **범위에서 제외**. 계약 문서는 지우지 않고 표시. 대체되지 않은 FAIL/INCONCLUSIVE가 있으면 확정할 수 없음 | 승민 | 확정(v1.8) |
 
 ---
 
@@ -156,6 +158,8 @@
 - **영향**: `ledger-events.schema.json`, `ElectionCreate.time_bucket_seconds`
 
 ### D-11. 승인 대상·기준·서명 (v0.2 변경)
+- **v1.8**: 이번 버전 범위에서 제외(D-31). 제안·승인 서명·ROSTER_AMEND·ELECTION_VOID는 구현하지 않음. 전원 투표 마감(v1.5 예외)은 범위에 남고 구현돼 있음
+
 
 | 작업 | 승인 기준 |
 |---|---|
@@ -236,6 +240,7 @@
 - **한계**: 개표 전에는 키 보유자가 표를 미리 볼 수 있음. 키가 공개된 뒤에는 자기 봉인 투표를 보관한 유권자가 키 보유자에게 자기 선택을 증명할 수 있음(매표·강요 위험). 임계값 복호화·복호화 증명은 향후 과제
 
 ### D-24. 확정(finalize) 조건 (신규)
+- **v1.8**: 서명 검토(FINDING_REVIEWED), RESOLVED·CONFIRMED_ISSUE, 검토 정족수는 이번 버전 범위에서 제외(D-31). finding의 원장 기록과 확정 시 검사는 그대로
 - **배경**: v0.2는 확정 조건이 AI 보고서의 사람 검토에 묶여 있어 AI 없이(규칙만 비교군) 확정할 수 없었음(감독관 P1-9)
 - **배경(v0.4)**: v0.3은 선관위가 자기 행위에 대한 FAIL을 혼자 기각하고 확정할 수 있었고, 검토 기록이 원장에 남지 않았음(감독관 3차 P1-2)
 - **추천안**
@@ -277,7 +282,7 @@
 - **배경**: 11-19에 전체 데모, 11-30까지 모든 작업을 끝내야 해서 system-design 9절의 8주 계획(D-01 "2개월 범위")을 줄임
 - **결정**
   - `docs/schedule.md`가 system-design 9절 주차 표와 `docs/roles/*`의 마일스톤 표를 대체함: M1 11-11(실제 구성으로 T01), M2 11-19(데모 버전), M3 11-26(필수 범위). 모든 작업은 11-30까지(v1.2.1: M4, T14, 12-04 삭제)
-  - 필수 범위는 그대로(D-01): 정상 투표, 명단 정정, 무효, R1–R5, T01·T02·T04·T05·T08·T15
+  - 필수 범위는 그대로(D-01): 정상 투표, 명단 정정, 무효, R1–R5, T01·T02·T04·T05·T08·T15 (v1.8: 명단 정정·무효는 범위에서 제외, D-31)
   - 만들지 않음: 기간 변경, 조기 마감, 링크 재발급, 체인 직접 제출, T03·T06·T07·T09–T14·T16(T14 다른 PC 시험은 v1.2.1에서 뺌)
   - AI 감사 에이전트: 비용 0만 허용(D-15 v1.2). M2 데모에 포함. Anik이 11-12까지 템플릿 보고서, 11-13에 로컬 무료 모델 확인(진행/중단), 11-17까지 에이전트 통합(파일, Core 저장은 후속 연구). R4/R5(11-16)와 11-25 작업이 우선
   - 웹(v1.2.1): 만드는 화면은 M2에서 전부 시연 가능. 승인·검토 화면은 데모 2부에서 가짜 Gateway로, M3부터 실제 계약으로 동작
@@ -341,3 +346,17 @@
   - 웹 복호화(v1.7)는 기관이 불러온 페이지를 믿어야 함. 웹을 제공하는 쪽(데모에서는 선관위 PC)이 열쇠 파일을 빼돌리는 페이지를 줄 수 있음. 진짜로 나누려면 기관마다 웹을 직접 제공하거나 고정하거나 CLI 도구를 써야 함. 데모는 세 열쇠 파일을 한 PC에 둠
   - 웹의 "합계 하나" 기록은 그 브라우저에만 있음. 다른 브라우저·PC, 사이트 데이터 삭제, 시크릿 창이면 사라지고, 그러면 부정한 Core가 서로 다른 두 합계의 조각을 얻을 수 있음. 카드에 "한 선거는 같은 브라우저에서, 시크릿 창 금지"를 안내함. 더 강한 보호는 CLI의 파일 기록
 - **영향:** `contracts/ballot-elgamal.md`(신규), `contracts/core-api.openapi.yaml`(v1.2.0), Core(`elgamal.py`, `elections.py`, `voting.py`, `tally.py`, `views.py`, `scripts/trustee.py`, `scripts/register_trustee.py`, DB 스키마·마이그레이션), 웹(`elgamal.ts`, `seal.ts`), `rules/purevoting_rules/engine.py`(R5 `KEY_NOT_REVEALED`), `tests/vectors/elgamal-vectors.json`, `docker-compose.yml`(`BALLOT_SCHEME`), `tools/trustees.sh`, 위협 모델 S1·S3, 표를 내는 스크립트(`tests/scenarios/T01/setup.py`와 README의 `tools/trustees.sh keygen` 단계, `core/devtools/demo_flow.py`, `rules/devtools/worker_smoke.py`)
+
+### D-31. 이번 버전의 범위 (v1.8 신규)
+- **배경**: D-11(기관 서명을 거치는 관리 행위)과 D-24(finding 서명 검토)는 필수 범위(D-01, D-28)에 들어 있었음. 둘 다 이번 버전에서 선거가 지나가는 경로에는 없음
+- **결정**: 이번 버전의 선거 흐름(생성 → 명단 → 링크 → 투표 → 마감 → 세 기관 복호화 → 개표 → 감사 → 확정)에 필요하지 않다고 보아 범위에서 제외함(팀장 결정). (2026-11-27)
+  - 이번 버전 범위에서 제외("아직 미구현"이 아님)
+    1. 기관 서명·제안·승인을 거치는 관리 행위: ROSTER_AMEND, ELECTION_VOID와 그 절차 — 계약 `proposalState`·`openProposal`·`submitDecision`/`relayDecision`·`executeAction`·`failAction`·`amendRoster`·`voidElection`, 이벤트 `ProposalDecided`, Gateway `/v1/proposals*`, Core `/v1/elections/{id}/admin-actions`·`/v1/admin-actions/*`, 승인 화면. TOKEN_REISSUE·WINDOW_CHANGE·ELECTION_CLOSE_EARLY는 D-28대로 제외 유지. 전원 투표 마감(v1.5)은 범위에 남고 구현돼 있음
+    2. finding 서명 검토 — 계약 `submitFindingReview`/`relayFindingReview`, 이벤트 `FindingReviewed`(원장 FINDING_REVIEWED), Gateway `POST /v1/finding-records/{id}/reviews`, Core `PATCH /v1/findings/{id}/review`, 검토 화면 — 와 그에 따른 확정 정족수
+  - 필수 범위(D-28)는 이제 정상 투표, R1–R5, T01·T02·T04·T05·T08·T15
+  - 지우지 않고 표시: Core·규칙 엔진·원장 코드가 아직 이 이름들을 쓰므로 `contracts/`의 정의·스키마 필드·enum 값·예시는 그대로 두고, 해당 절이나 설명 앞에 "Out of scope in this version (D-31): not implemented."를 붙임. 문서만 바꾸고 인터페이스는 바꾸지 않음
+- **이번 버전의 실제 동작** (`ledger/contracts/PureVotingLedger.sol`의 `finalizeElection`·`_requireFindingsFinal`·`_recordFinding`·`_supersede`·`_hasHigherPass`, `core/app/tally.py`의 `check_finalizable`, `ledger/gateway/gw_server.py`의 `NOT_IMPLEMENTED`에서 확인)
+  - 확정에는 TALLY 체크포인트에 R1–R5 finding이 모두 있어야 하고, 선거의 FAIL·INCONCLUSIVE finding이 체크포인트와 상관없이 하나라도 PENDING이면 거부됨(계약 `FindingsUnresolved`. Core가 보내기 전에 409 FINDINGS_UNREVIEWED로 먼저 거부). INCONCLUSIVE는 같은 규칙의 PASS가 더 높은 체크포인트에서, 또는 같은 체크포인트에서 나중에 기록되면 SUPERSEDED가 됨. FAIL은 대체되지 않음
+  - FAIL을 해결하거나 선거를 무효로 할 방법이 없음. 그런 선거는 TALLIED로 남음. 다른 이유로 진행할 수 없는 선거(종료 시각 전에 열리지 못함, TALLY·CLOSE_FINAL 체크포인트 거부)도 그 상태로 남음. RESOLVED·CONFIRMED_ISSUE 값은 계약 인터페이스에 있지만 도달할 수 없음. Gateway는 `/v1/proposals*`와 `/v1/finding-records/{id}/reviews`에 501로 답함
+  - 명단 고정 뒤 명단은 시스템으로 바꿀 수 없음(DRAFT가 아니면 명단 `PUT` 거부). DB를 직접 고치면 규칙 엔진이 탐지함(T05)
+- **영향**: `docs/decisions.md` / `.ko.md`(D-11·D-24·D-28에 표시), `contracts/README.md`, `contracts/chain-interface.md`, `contracts/hashing.md`, `contracts/core-api.openapi.yaml`, `contracts/ledger-gateway.openapi.yaml`, `contracts/finding.schema.json`(설명 문구만), `contracts/CHANGELOG.md`, `docs/schedule.md`, `docs/system-design.md` / `.ko.md`, `docs/data-flow.ko.md`, `docs/threat-model.md`, `docs/roles/core-web.md`, `docs/roles/ledger.md`, `docs/design-proposal.ko.md`, `docs/deployment.ko.md`

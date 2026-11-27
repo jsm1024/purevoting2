@@ -20,6 +20,12 @@ Voter · Election commission admin (Core operator) · Approver of each organizat
 
 ## Threats and mitigations
 
+> D-31 (2026-11-27): mitigations that rely on proposals / approval signatures (ROSTER_AMEND, ELECTION_VOID) or on
+> signed finding reviews (I1, I7, I8, I9, I10, V1, L2, L3, the approval / review part of I13 and the void exits) are
+> out of scope in this version: not implemented.
+> In this version a FAIL finding blocks finalization for good, nothing voids an election, and a roster change after
+> freeze is only possible by a direct DB edit, which the Rule Engine detects (T05).
+
 | # | Threat | Mitigation (contract element) | Residual risk / limit to state in the report |
 |---|---|---|---|
 | S1 | Link voter to ballot by **time** (redeem time ≈ ballot time) | bucketed time on voter events, random `evr_` IDs, no `received_at`/`seq` on voter events, shuffled per-bucket release, views use checkpoint numbers whose interval is an integer multiple of the bucket (never finer), bucket size guidance of D-10 (≥ 10 expected voters per bucket; **not enforced since decisions v1.4**, the admin web fixes the bucket at 60 s) | **If a bucket contains only one or two voters, its TOKEN_USED and BALLOT_RECEIVED pair up; anyone holding the CSV / credential DB can then attribute those ballots, and after the private key is revealed (D-23) read the choice; with D-30 (ElGamal) no key is revealed, so only a bucket whose voters all chose the same candidate, or a one-ballot election, gives the choice away.** **Since decisions v1.4 the sizing rule is not enforced and the admin web always uses 60 s buckets, so this is the normal case, not an edge case:** a bucket holds about `roster ÷ window length in minutes` expected voters, which is below 10 whenever the window is longer than `roster ÷ 10` minutes (100 voters → any window over 10 minutes; e.g. 100 voters over 2 h → 0.8 per bucket, most ballots attributable). Lower turnout makes it worse. Accepted by the team lead (2026-11-11) so that a small roster can always vote; disclosed limitation. Service logs keep exact request times but no identifiers. The sizing rule assumes full turnout and an even spread; real turnout below 100 %, or voting concentrated in a few buckets, leaves fewer voters per bucket. If all voters of one checkpoint choose the same candidate, the revealed key plus participation data reveals that choice for each of them |

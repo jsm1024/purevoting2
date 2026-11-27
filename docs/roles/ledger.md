@@ -41,13 +41,15 @@ Tell the team which one you chose in week 1 (one line in `docs/decisions.md` D-0
 | `GET /v1/events*`, `/v1/rejections*`, `/v1/anchors*`, `/v1/verify`, `/v1/elections/{id}/state`, `/v1/organizations`, `/v1/nodes`, `/v1/chain` | Core, Rule Engine, Audit Agent, `auditorKey` | read only |
 | `POST /v1/proposals`, `POST /v1/proposals/{id}/decisions` | Core (relays signatures it cannot create) | |
 | `POST /v1/finding-records` | Rule Engine (`ruleKey`) only | |
-| `POST /v1/finding-records/{id}/reviews` | Core (relays signed reviews) | |
+| `POST /v1/finding-records/{id}/reviews` (out of scope in this version, D-31) | Core (relays signed reviews) | |
 | Contract (`chain-interface.md`) | Gateway account (writes), anyone (direct submissions, reads) | |
 
 **You consume:** Core `POST /internal/v1/audit-alerts` with `gatewayKey`, only to raise `ANCHOR_REJECTED`; Core
 `POST /internal/v1/service-logs:append` for your own logs (optional).
 
 ## 4. Mandatory features
+> D-31 (2026-11-27): proposals, approval signatures, `amendRoster` / `voidElection` and signed finding reviews
+> with their quorum below are out of scope in this version: not implemented.
 
 ### 4.1 Contract
 1. **Registry** set up at network start.
@@ -65,14 +67,14 @@ Tell the team which one you chose in week 1 (one line in `docs/decisions.md` D-0
    - `finalizeElection` checks:
      - the result hash equals the tally;
      - the finding quorum holds. R1–R5 records exist at the TALLY checkpoint. Every FAIL / INCONCLUSIVE is RESOLVED or SUPERSEDED. There is no CONFIRMED_ISSUE.
-     - Quorum = signed reviews from ≥ threshold participating orgs **other than the operator**.
+     - Quorum = signed reviews from ≥ threshold participating orgs **other than the operator** (out of scope in this version, D-31).
    - `voidElection` is allowed from DRAFT, ROSTER_FROZEN, OPEN, CLOSED and TALLIED.
 3. **Checkpoints**:
    - `commitCheckpoint` requires strictly increasing numbers per election.
    - It stores the current state under (election, checkpoint) for `electionStateAtCheckpoint`.
    - `reason` is 0 PERIODIC, 1 STATE_CHANGE, 2 CLOSE_FINAL or 3 TALLY.
 4. **Anchors:** `commitAnchor` with mode 0 immediate / 1 batched. A batched anchor is refused if `bucketMax + bucket > effective end`.
-5. **Proposals:**
+5. **Proposals** (out of scope in this version, D-31):
    - `openProposal` stores `expiresAt = block time + proposalTtlHours`.
    - Decisions are relayed or submitted directly; the requester cannot approve its own action.
    - At the threshold the proposal is APPROVED. When approval becomes impossible it is REJECTED. After `expiresAt` it is EXPIRED.
@@ -106,7 +108,7 @@ Tell the team which one you chose in week 1 (one line in `docs/decisions.md` D-0
    - **Never record their arrival time or arrival order.**
    - Collect them into a batch. Close the batch every **60 s or at 50 events**, shuffle the leaves randomly at batch close and anchor the Merkle root.
 4. **Rejections:** every refused submission becomes a rejection record (`rejection_leaf`). Their `rejections_root` goes into the next anchor of that election, and `anchor_id` is set once that anchor exists.
-5. **Proposals:** create and relay them, and emit ADMIN_ACTION_REQUESTED, APPROVAL_RECORDED and PROPOSAL_CLOSED. Report APPROVED only after every APPROVAL_RECORDED that made it so is stored.
+5. **Proposals** (out of scope in this version, D-31): create and relay them, and emit ADMIN_ACTION_REQUESTED, APPROVAL_RECORDED and PROPOSAL_CLOSED. Report APPROVED only after every APPROVAL_RECORDED that made it so is stored.
 6. **Finding records:** `POST /v1/finding-records` takes the Rule Engine's signed record. It is idempotent, and returns 422 CHECKPOINT_NOT_FOUND if the checkpoint is not committed yet. Review relay emits FINDING_REVIEWED.
 7. **Indexing chain events** (the relayed path is mandatory; indexing of direct submissions is optional, T10 / T16):
    - Turn `ProposalDecided`, `FindingRecorded` and `FindingReviewed` into ledger events. Use `submitted_via: chain` when the transaction did not come from you.
@@ -162,7 +164,7 @@ Dates for every item below and the milestones M1–M3: **`docs/schedule.md`** (D
 5. Gateway: `POST /v1/events` (seq, outcomes, voter checks, batching, rejections).
 6. Contract + Gateway: finding records (`relayFindingRecord`, `POST /v1/finding-records`) (needed for T01).
 7. Gateway: query endpoints + indexing of relayed chain events.
-8. Contract: anchors refusal rule, proposals + execution order.
+8. Contract: anchors refusal rule, proposals + execution order (out of scope in this version, D-31).
 
 ### v1.1 additions (2026-11-02, decisions D-02 / D-03 / D-27)
 - Gateway: confirmed-blocks rule, same-signed-transaction re-broadcast, exact-match handling of "already applied"
@@ -174,7 +176,7 @@ Dates for every item below and the milestones M1–M3: **`docs/schedule.md`** (D
 - Network: a mode that seals blocks continuously (empty blocks) with period P ≤ 5 s (provisional).
 - **Measurements due 2026-11-13 (D-28; D = 2 until then):** mode name and P; one- and two-validator stop tests; deepest reorg observed in
   stop/restart tests (final D = max(2, that + 1)). Record them in D-02 / D-03 / D-27.
-9. Contract: reviews, finalize quorum.
+9. Contract: reviews, finalize quorum (out of scope in this version, D-31).
 10. (Optional) indexing of direct submissions.
 
 If a contract rule blocks you, open an issue and change the contract by PR (@mention the affected owners, one line in

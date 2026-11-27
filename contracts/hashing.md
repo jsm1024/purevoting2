@@ -44,6 +44,8 @@ Every component MUST compute these values exactly as written; R4/R5 compare them
 
 ## Signatures (business approval, finding records and reviews)
 
+Out of scope in this version (D-31): not implemented. (request, approval and review digests; the finding record digest is in use)
+
 Signed digests use a **fixed binary layout** so that the smart contract can rebuild them from its `bytes32` arguments
 (no JSON on chain). All parts are exactly 32 bytes and concatenated:
 

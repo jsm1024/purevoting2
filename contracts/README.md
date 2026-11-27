@@ -5,6 +5,8 @@ Implement against them; if you need a change, change the contract first (see *Ch
 Consistent with the confirmed decisions in `../docs/decisions.md` (v1.1: D-02 PureChain, D-03, D-27 confirmation depth). Threats and known limits: `../docs/threat-model.md`.
 How each defect test (T01–T16; mandatory for the MVP: T01, T02, T04, T05, T08, T15) maps to these contracts: `../docs/test-plan.md`.
 
+**Scope note (2026-11-27, decisions D-31).** Out of scope in this version: organization-signed admin actions with proposals and approval signatures (ROSTER_AMEND, ELECTION_VOID; proposals, decisions, execution order; Gateway `/v1/proposals*`, Core `admin-actions`) and signed finding reviews (FINDING_REVIEWED, Gateway `/v1/finding-records/{id}/reviews`, Core `PATCH /v1/findings/{id}/review`) with the finalize quorum built on them. Their definitions stay in these files, marked "Out of scope in this version (D-31): not implemented." Actual behaviour: finalize is refused while any FAIL or INCONCLUSIVE finding record of the election is not SUPERSEDED (an INCONCLUSIVE is superseded by a later PASS of the same rule, a FAIL never); such an election stays TALLIED, as there is no review and no ELECTION_VOID; RESOLVED and CONFIRMED_ISSUE cannot be reached; a roster change after freeze is not possible through the system (a DB edit is detected by the Rule Engine, T05).
+
 | File | Producer | Consumers |
 |---|---|---|
 | `core-api.openapi.yaml` | Core API | Web (voter/admin), Rule Engine, Audit Agent |
@@ -51,10 +53,10 @@ How each defect test (T01–T16; mandatory for the MVP: T01, T02, T04, T05, T08,
 
 | Operation | Core API | Rule Engine (`ruleKey`) | Audit Agent (`agentKey`) | Gateway (`gatewayKey`) | Staff `admin` | Staff `approver` |
 |---|---|---|---|---|---|---|
-| Gateway `POST /v1/events`, `/v1/proposals*` (write) | ✅ | ❌ | ❌ | — | — | — |
+| Gateway `POST /v1/events`, `/v1/proposals*` (write; proposals out of scope, D-31) | ✅ | ❌ | ❌ | — | — | — |
 | Gateway GET / `POST /v1/verify` (read; also `auditorKey`, issued to each participating org and invited auditors) | ✅ | ✅ | ✅ | — | — | — |
 | Gateway `POST /v1/finding-records` (register finding hash) | ❌ | ✅ | ❌ | — | — | — |
-| Gateway `POST /v1/finding-records/{id}/reviews` (relay signed review) | ✅ | ❌ | ❌ | — | — | — |
+| Gateway `POST /v1/finding-records/{id}/reviews` (relay signed review; out of scope, D-31) | ✅ | ❌ | ❌ | — | — | — |
 | Core `/internal/v1/views*`, `/checkpoints`, `/elections`, `GET findings` | — | ✅ | ✅ | ❌ | — | — |
 | Core `/v1/elections/{id}/views/{view}`, alerts, findings, `roster:read` (auditors: read-only staff role `auditor`, no names) | — | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Core `POST /internal/v1/findings`, run requests | — | ✅ | ❌ | ❌ | — | — |
@@ -63,9 +65,9 @@ How each defect test (T01–T16; mandatory for the MVP: T01, T02, T04, T05, T08,
 | Core read `/internal/v1/service-logs*` | — | ❌ | ✅ | ❌ | — | — |
 | Core `POST /internal/v1/service-logs:append` (own service only) | — | ✅ | ❌ | ✅ | — | — |
 | Election / roster / tokens / tally / finalize (`admin` exists only for operator_org staff) | — | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Create + submit admin action | — | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Approve / reject admin action (signed) | — | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Review finding (signed by the reviewer's org; operator_org reviews never count toward RESOLVED) | — | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Create + submit admin action (out of scope, D-31) | — | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Approve / reject admin action (signed; out of scope, D-31) | — | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Review finding (signed by the reviewer's org; operator_org reviews never count toward RESOLVED; out of scope, D-31) | — | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Review AI report (`human_review`) | — | ❌ | ❌ | ❌ | ✅ | ✅ |
 
 The Audit Agent has **no** operation that deletes or invalidates ballots, stops an election, changes results,
@@ -80,12 +82,13 @@ approves actions or reviews findings/reports. Its complete tool list is `audit-r
 | ROSTER_FROZEN → OPEN | Core scheduler at `window_start` (block time not yet reached → RETRY_LATER; if REJECTED for another cause, Core may emit a new ELECTION_OPENED before window_end) | ELECTION_OPENED | every ACTIVE voter has a non-revoked token; if not, Core does not open, alerts, and opens at the first bucket boundary after the missing tokens are issued (if still before window_end) | contract (time), Core (tokens) |
 | OPEN → CLOSED | scheduler at `window_end` (SCHEDULED), executed ELECTION_CLOSE_EARLY, or admin `:close` once every voter has voted (ALL_VOTED, decisions v1.5, no approval: every ACTIVE voter has a non-revoked token, every such token USED and every credential has a ballot; `closed_at` = floor_to_bucket(now) + bucket < window_end, so not in the last bucket; applied at once) | ELECTION_CLOSED | `closed_at` bucket-aligned; never in the past when the early-close action executes (a scheduled close delayed by a pending extension that is then rejected uses the old end) | contract |
 | CLOSED → TALLIED | admin `tally` | TALLY_PUBLISHED | final_checkpoint = the CLOSE_FINAL checkpoint, which is ACCEPTED; outbox empty; no PENDING voter event ≤ final checkpoint | Core + contract (once only) |
-| DRAFT, ROSTER_FROZEN, CLOSED or TALLIED (contract: also OPEN, e.g. after a rejected close) → VOIDED | executed ELECTION_VOID (multi-org approval) | ELECTION_VOIDED | cancel before voting, or the only exit when a finding is CONFIRMED_ISSUE or the tally cannot be completed; terminal | contract |
-| TALLIED → FINALIZED | admin `finalize` | ELECTION_FINALIZED | FINDING_RECORDED for R1–R5 at the TALLY checkpoint; every FAIL/INCONCLUSIVE finding record RESOLVED (signed reviews of ≥ threshold participating orgs of the election other than operator_org) or SUPERSEDED; none CONFIRMED_ISSUE; result_hash equals tally | Core + contract (from ledger finding records) |
+| DRAFT, ROSTER_FROZEN, CLOSED or TALLIED (contract: also OPEN, e.g. after a rejected close) → VOIDED | Out of scope in this version (D-31): not implemented. Executed ELECTION_VOID (multi-org approval) | ELECTION_VOIDED | cancel before voting, or the only exit when a finding is CONFIRMED_ISSUE or the tally cannot be completed; terminal | contract |
+| TALLIED → FINALIZED | admin `finalize` | ELECTION_FINALIZED | (D-31: no reviews in this version, so RESOLVED / CONFIRMED_ISSUE cannot occur and only SUPERSEDED closes a finding) FINDING_RECORDED for R1–R5 at the TALLY checkpoint; every FAIL/INCONCLUSIVE finding record RESOLVED (signed reviews of ≥ threshold participating orgs of the election other than operator_org) or SUPERSEDED; none CONFIRMED_ISSUE; result_hash equals tally | Core + contract (from ledger finding records) |
 
-If window_end passes while the election is still ROSTER_FROZEN (it never opened), the only exit is ELECTION_VOID.
+If window_end passes while the election is still ROSTER_FROZEN (it never opened), the only exit is ELECTION_VOID
+(out of scope in this version, D-31: the election stays ROSTER_FROZEN).
 Everything else is refused (`INVALID_STATE_TRANSITION`): no backward moves; roster `PUT` only in DRAFT;
-ROSTER_AMEND / TOKEN_REISSUE only in ROSTER_FROZEN or OPEN; WINDOW_CHANGE / ELECTION_CLOSE_EARLY follow the
+ROSTER_AMEND (out of scope, D-31) / TOKEN_REISSUE (D-28) only in ROSTER_FROZEN or OPEN; WINDOW_CHANGE / ELECTION_CLOSE_EARLY follow the
 execution-time rules in `core-api.openapi.yaml` (decideAdminAction) — a window shortening is strict (applied at once),
 an extension permissive (applied after ACCEPTED; the contract rejects it once the current end has passed); nothing changes after
 FINALIZED or VOIDED — these transitions are the last events of an election and are not followed by a checkpoint.
@@ -155,21 +158,21 @@ A checkpoint is the common reference point for audits and the unit of coarse tim
 |---|---|---|---|
 | ELECTION_CREATED | core | election created | immediate |
 | ROSTER_FROZEN | core | roster locked | immediate |
-| ROSTER_AMENDED | core | approved ROSTER_AMEND executed | immediate |
+| ROSTER_AMENDED | core | approved ROSTER_AMEND executed (out of scope in this version, D-31) | immediate |
 | TOKEN_BATCH_ISSUED | core | `tokens:issue` | immediate |
 | TOKEN_REVOKED | core | unused token revoked (voter removed, or TOKEN_REISSUE) | immediate |
 | TOKEN_USED | core | voter redeems a link | **batched**, bucketed time, `evr_` ID |
 | BALLOT_RECEIVED | core | ballot accepted | **batched**, bucketed time, `evr_` ID |
-| ADMIN_ACTION_REQUESTED | gateway | signed proposal opened | immediate |
-| APPROVAL_RECORDED | gateway | an org's signed APPROVE / REJECT | immediate |
-| PROPOSAL_CLOSED | gateway | proposal APPROVED / REJECTED / EXPIRED | immediate |
-| ADMIN_ACTION_EXECUTED / ADMIN_ACTION_FAILED | core | approved action applied / refused at execution | immediate |
+| ADMIN_ACTION_REQUESTED | gateway | signed proposal opened (out of scope in this version, D-31) | immediate |
+| APPROVAL_RECORDED | gateway | an org's signed APPROVE / REJECT (out of scope in this version, D-31) | immediate |
+| PROPOSAL_CLOSED | gateway | proposal APPROVED / REJECTED / EXPIRED (out of scope in this version, D-31) | immediate |
+| ADMIN_ACTION_EXECUTED / ADMIN_ACTION_FAILED | core | approved action applied / refused at execution (out of scope in this version, D-31) | immediate |
 | ELECTION_OPENED / ELECTION_CLOSED | core | window start / end or early close | immediate |
 | WINDOW_CHANGED | core | approved window change executed | immediate |
 | CHECKPOINT_COMMITTED | core | checkpoint committed | immediate |
 | FINDING_RECORDED | gateway | Rule Engine registers a finding hash | immediate |
-| FINDING_REVIEWED | gateway | an org's signed review of a finding | immediate |
-| TALLY_PUBLISHED / ELECTION_FINALIZED / ELECTION_VOIDED | core | tally / finalization / voiding | immediate |
+| FINDING_REVIEWED | gateway | an org's signed review of a finding (out of scope in this version, D-31) | immediate |
+| TALLY_PUBLISHED / ELECTION_FINALIZED / ELECTION_VOIDED | core | tally / finalization / voiding (voiding out of scope, D-31) | immediate |
 
 ## Evidence references
 
@@ -220,10 +223,11 @@ either an accepted event or a rejection record.
 | **R5** integrity | for **every committed checkpoint j ≤ k**: recomputed `snapshot_hash(view, j)` ≠ the CHECKPOINT_COMMITTED j value (so a later change to an already-committed row is caught); **row-level match with the ledger**: every ballot_receipts row (nullifier_hash, ballot_hash, receipt_hash, received_bucket, event_id) ≠ the accepted BALLOT_RECEIVED with that event_id, every accepted BALLOT_RECEIVED without its row, every token_status row used ≤ k without an accepted TOKEN_USED of that token_hash (and vice versa); a ballot_receipts row with `H(sealed_ballot) ≠ ballot_hash`; recomputed roster_hash / token_set_root ≠ latest ROSTER_* / TOKEN_* value; recomputed config_hash (using config_window_start / config_window_end) / public_key_hash ≠ ELECTION_CREATED; recomputed payload_hash or leaf_hash ≠ stored; recomputed Merkle root or rejections_root ≠ the value read **from a node** (`chain-interface.md` anchorAt). At the TALLY checkpoint additionally: `TALLY.final_checkpoint ≠` the CLOSE_FINAL checkpoint; recomputed `ballot_set_root` from accepted BALLOT_RECEIVED ≤ final ≠ TALLY value, or ≠ set_root of view ballot_hash ≤ final; SEALED_BOX_V1: re-decrypting the sealed_ballot of every ledger-accepted ballot (rows matched to the ledger as above) with the revealed private key gives results ≠ TALLY results, or a different invalid set (valid plaintext = UTF-8 JSON exactly `{"candidate_id": <a candidate of the election>}`); ELGAMAL_ED25519_V1 (D-30): instead of the re-decryption and the key check below, the checks of `ballot-elgamal.md` section 6 (organization keys and election key at every checkpoint → `key_mismatch`; at TALLY every ballot proof → `tally_invalid_set_mismatches`, every organization's decryption share (none when no ballot is valid) → `tally_share_failures`, the decrypted sums → `tally_result_mismatches`); recomputed result_hash ≠ TALLY; `electionStateAtCheckpoint(k)` (status, windowEnd, rosterHash, tokenSetRoot, resultHash) ≠ the state derived from the ledger core events with seq ≤ its lastCoreSeq (derivation table in chain-interface.md) → `chain_state_mismatch` (catches a Gateway calling the contract with other arguments; unaffected by later chain progress); the immutable creation fields read from a node (`electionState`: configHash, windowStart, timeBucketSeconds; `electionGovernance`: orgIds, approvalThreshold, operatorOrgId, proposalTtlHours, checkpointIntervalSeconds) ≠ ELECTION_CREATED → `governance_mismatch` (windowEnd is not compared here); SEALED_BOX_V1: the revealed private key does not match public_key_hash (or does not derive the public key); any checkpoint whose CHECKPOINT_COMMITTED the Gateway rejected (`rejected_checkpoints`); PERIODIC CHECKPOINT_COMMITTED events not on multiples of checkpoint_interval_seconds from ELECTION_OPENED.occurred_at (the actual opening time), or more than one per interval (`checkpoint_cadence_violations`). If the private key is not revealed at the TALLY checkpoint (ELGAMAL_ED25519_V1: `decryption_shares` is null) → INCONCLUSIVE `KEY_NOT_REVEALED`. (ELECTION_FINALIZED.result_hash = tally is enforced by the contract, since no checkpoint follows FINALIZED) | events not anchored when the rule runs, or no node reachable → INCONCLUSIVE (`BATCH_NOT_ANCHORED` / `NODE_UNAVAILABLE`) | `rejected_checkpoints`, `chain_state_mismatch`, `governance_mismatch`, `checkpoint_cadence_violations`, `row_ledger_mismatches`, `key_mismatch`, `tables_mismatched`, `sealed_hash_mismatches`, `root_mismatches`, `config_mismatch`, `events_hash_mismatch`, `anchors_mismatch`, `events_unanchored`, `rejections_unanchored`, `cumulative_anchor_events_missing` / `cumulative_anchor_rejections_missing` / `chain_anchor_ids_missing_from_gateway` (lists of ids); at TALLY: `tally_root_mismatches` (ballot_set_root), `tally_final_checkpoint_mismatches`, `tally_result_hash_mismatches`, `tally_invalid_set_mismatches`, `tally_result_mismatches`, and for ELGAMAL_ED25519_V1 only `tally_share_failures` (`ballot-elgamal.md` section 6); these are null outside TALLY, and at TALLY for a check that could not run (no single TALLY_PUBLISHED, KEY_NOT_REVEALED, results after a share failure) |
 
 **Repeated anomalies.** Because every run is cumulative, a persisting anomaly produces a FAIL at each later checkpoint.
-In the MVP each FAIL needs its own signed reviews; the Rule Engine sets `previous_finding_id` to the earlier FAIL of the
+In the MVP each FAIL needs its own signed reviews (out of scope in this version, D-31); the Rule Engine sets `previous_finding_id` to the earlier FAIL of the
 same rule so reviewers can process repeats quickly, and experiment counts use distinct anomalies, not findings.
 
-**Review and supersession.** FAIL / INCONCLUSIVE findings need signed reviews (see Finding.review). An INCONCLUSIVE
+**Review and supersession.** Out of scope in this version (D-31): signed reviews are not implemented; supersession
+is. FAIL / INCONCLUSIVE findings need signed reviews (see Finding.review). An INCONCLUSIVE
 finding is SUPERSEDED (no review needed) once a finding of the same rule at a strictly higher committed checkpoint is
 PASS, or a PASS of the same rule at the same checkpoint recorded later (re-run after the cause cleared): every rule's later evaluation covers the cumulative data (R5 explicitly re-checks all earlier checkpoints). FAIL
 findings are never superseded, and any CONFIRMED_ISSUE review overrides SUPERSEDED / RESOLVED.

@@ -635,6 +635,8 @@ paths:
       operationId: finalizeElection
       summary: TALLIED → FINALIZED. Emits ELECTION_FINALIZED. Already FINALIZED → 202 with the same election (retry-safe).
       description: |
+        D-31: signed reviews and ELECTION_VOID are out of scope in this version, so in condition 2 only SUPERSEDED
+        closes a finding (a FAIL blocks finalization for good) and condition 3 cannot occur.
         Preconditions (independent of the AI — works in a rules-only setup), checked by Core and enforced again by the
         smart contract from FINDING_RECORDED / FINDING_REVIEWED ledger events:
         1. A FINDING_RECORDED of each rule R1–R5 exists for the TALLY checkpoint, and every FINDING_RECORDED of the
@@ -673,7 +675,9 @@ paths:
     post:
       tags: [admin-actions]
       operationId: createAdminAction
-      description: Refused with 409 INVALID_STATE_TRANSITION while the election's creation_check ≠ PASSED (also for submit).
+      description: |
+        Out of scope in this version (D-31): not implemented.
+        Refused with 409 INVALID_STATE_TRANSITION while the election's creation_check ≠ PASSED (also for submit).
       summary: Draft a privileged action (status AWAITING_SIGNATURE). Returns target, target_hash and request_digest; the signer's client recomputes target_hash from target and the request digest itself (hashing.md) and refuses to sign on mismatch.
       security: [{ bearer: [admin, approver] }]
       parameters:
@@ -699,6 +703,7 @@ paths:
     get:
       tags: [admin-actions]
       operationId: listAdminActions
+      description: 'Out of scope in this version (D-31): not implemented.'
       security: [{ bearer: [admin, approver] }]
       parameters:
         - { $ref: '#/components/parameters/ElectionIdPath' }
@@ -720,6 +725,7 @@ paths:
     get:
       tags: [admin-actions]
       operationId: getAdminAction
+      description: 'Out of scope in this version (D-31): not implemented.'
       security: [{ bearer: [admin, approver] }]
       parameters:
         - { $ref: '#/components/parameters/ActionIdPath' }
@@ -736,6 +742,7 @@ paths:
     post:
       tags: [admin-actions]
       operationId: submitAdminAction
+      description: 'Out of scope in this version (D-31): not implemented.'
       summary: Attach the requesting organization's signature and open the Gateway proposal → PENDING_APPROVAL (same signature again → 200)
       security: [{ bearer: [admin, approver] }]
       parameters:
@@ -769,6 +776,7 @@ paths:
       operationId: decideAdminAction
       summary: Approve or reject as the caller's organization (signature made in the approver's client)
       description: |
+        Out of scope in this version (D-31): not implemented.
         Relayed to Gateway `POST /v1/proposals/{id}/decisions`. When the proposal becomes APPROVED, Core executes
         the action and emits ADMIN_ACTION_EXECUTED plus the specific event (ROSTER_AMENDED, TOKEN_REVOKED,
         WINDOW_CHANGED, ELECTION_CLOSED, ELECTION_VOIDED). Core retries execution of an APPROVED action until EXECUTED or FAILED.
@@ -874,6 +882,7 @@ paths:
       operationId: reviewFinding
       summary: Signed review of a FAIL / INCONCLUSIVE finding by one organization (does not require an AI report)
       description: |
+        Out of scope in this version (D-31): not implemented.
         Retry-safe: the same decision, note and signature again returns 200. If the organization already submitted the
         same review directly on chain, this call attaches the note text (H(note) must equal note_hash) and the reviewer.
         The reviewer signs the review digest (hashing.md) in their own client; Core relays it to Gateway

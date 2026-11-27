@@ -38,6 +38,8 @@ organization and never creates findings; it only relays signatures made in the s
 - the pinned validator node, for the creation check only.
 
 ## 4. Mandatory features
+> D-31 (2026-11-27): admin actions with proposals and approvals and signed finding reviews below are out of
+> scope in this version: not implemented.
 
 ### 4.1 Core API
 1. **Elections:**
@@ -71,14 +73,14 @@ organization and never creates findings; it only relays signatures made in the s
 6. **Views:**
    - Seven views served with `?checkpoint=k`. Every field is "as of k", so a committed k always returns the same rows and the same `snapshot_hash`.
    - No names, and no view that joins tokens with credentials or ballots.
-7. **Admin actions** (mandatory: ROSTER_AMEND, ELECTION_VOID):
+7. **Admin actions** (mandatory: ROSTER_AMEND, ELECTION_VOID) (out of scope in this version, D-31):
    - Flow: create (returns `target`, `target_hash`, request digest) → submit (requester's signature) → decisions (relay signatures) → execute.
    - At execution, re-check the rules atomically.
    - Emit ADMIN_ACTION_EXECUTED first, then exactly that proposal's effects in the next seq numbers.
 8. **Findings and reviews:**
    - Store finding bodies under the single acceptance condition (schema + record exists + `Hc(body)` matches). Return 503 while the record is not indexed.
    - Resolve evidence into `evidence_check`.
-   - Relay signed reviews; status = the contract's `contract_status`.
+   - Relay signed reviews (out of scope in this version, D-31); status = the contract's `contract_status`.
 9. **Tally:**
    - Preconditions: CLOSE_FINAL accepted, outbox drained.
    - Count one ballot per accepted BALLOT_RECEIVED ≤ final, check `H(sealed_ballot)`, validate the plaintext.
@@ -99,8 +101,8 @@ organization and never creates findings; it only relays signatures made in the s
   4. Show the receipt and check it (`receipt_hash` computed locally); its status becomes ANCHORED when Core sees the BALLOT_RECEIVED anchored (poll Gateway `GET /v1/events/{event_id}`).
 - **Admin web:**
   - election setup, roster, link CSV and email summary, tally, finalize, alerts;
-  - an approval screen that **recomputes `target_hash` and the digest before signing** with the organization's key;
-  - a review screen that recomputes `Hc(finding body)` against the ledger before signing;
+  - (out of scope in this version, D-31) an approval screen that **recomputes `target_hash` and the digest before signing** with the organization's key;
+  - (out of scope in this version, D-31) a review screen that recomputes `Hc(finding body)` against the ledger before signing;
   - signing keys: the approver loads their org's signer key into the admin web (file or paste, kept in browser memory only). Core never reads `ORG_*_SIGNER_KEY`; only the registry setup script and the scenario scripts do.
 
 ### 4.3 Integration
@@ -174,7 +176,7 @@ Dates for every item below and the milestones M1–M3: **`docs/schedule.md`** (D
 5. Redeem + ballots.
 6. Outbox worker (seq, bucket release, outcomes) + checkpoints + views + internal endpoints for the Rule Engine.
 7. Findings storage (`POST /internal/v1/findings`) — needed for T01.
-8. Admin actions (ROSTER_AMEND, ELECTION_VOID) + approval relay.
+8. Admin actions (ROSTER_AMEND, ELECTION_VOID) + approval relay (out of scope in this version, D-31).
 9. Review relay; tally; finalize.
 10. Voter web; admin web (signing screens).
 11. Staff-account setup script (T01 needs an admin JWT; it runs before Core in the bootstrap order).
