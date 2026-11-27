@@ -1,8 +1,9 @@
 # Test plan (v1.0, with contracts v1.0)
 
 **Scope (D-01, system-design section 9):** mandatory T01, T02, T04, T05, T08, T15; the others are optional. The
-experiment protocol below is the target; the MVP minimum is the mandatory scenarios × seeds 1–3 for B1 (and B2 if the
-agent exists). Ground-truth labels: Harits (`tests/scenarios/README.md`). Shared hash vectors: `tests/vectors/hash-vectors.json`.
+experiment protocol below is the target; the MVP minimum (before v1.9) was the mandatory scenarios × seeds 1–3 for B1
+(and B2 if the agent exists); since v1.9 (decisions D-28) it is the run plan in "Experiment protocol" below.
+Ground-truth labels: Harits (`tests/scenarios/README.md`). Shared hash vectors: `tests/vectors/hash-vectors.json`.
 
 Status of every test: **not implemented / not run**. This file fixes *how* each required defect test (supervisor
 list T01–T14, plus T15–T16 added for tally and review governance) will be executed and judged with the contracts, so that results can be reproduced and compared.
@@ -16,7 +17,8 @@ list T01–T14, plus T15–T16 added for tally and review governance) will be ex
   `tests/scenarios/<id>/expected.json` (expected rule results and cause code).
 - Baselines for the experiment: (B0) original PureVoting behaviour, (B1) rules only, (B2) rules + AI (a free local model,
   D-15 v1.2; run only if it go was confirmed on 2026-11-17; a template report without AI is not B2).
-  Metrics: precision / recall / false-positive rate of FAIL, root-cause accuracy vs label (for B1 a fixed rule-ID → cause
+  Metrics (target protocol; v1.9 does not compute precision / recall / false-positive rate, see Experiment protocol):
+  precision / recall / false-positive rate of FAIL, root-cause accuracy vs label (for B1 a fixed rule-ID → cause
   mapping table, written with the labels, gives its 'cause'), evidence validity rate,
   AI tokens and time to report (API cost is 0: no paid AI, D-15 v1.2). B2 evidence validity is measured offline by a
   read-only script (Core report storage and EVIDENCE_NOT_FOUND are future work, D-28).
@@ -103,10 +105,19 @@ bucket (e.g. 60 s) and a small synthetic roster sized to the D-10 guidance, stat
 
 ## Experiment protocol
 
-- Scenarios (D-28): the 6 mandatory scenarios (T01, T02, T04, T05, T08, T15), seeds 1–3 first and 4–5 if time allows
-  (fault timing and voter order vary by seed), in the demo configuration, scripted, 2026-11-27 – 11-30. Baseline B1;
-  B2 only if the AI Audit Agent is built; B0 described qualitatively. The report states that the evaluation
-  configuration and seeds 6–10 were not run. (Before D-28: T01–T16 plus 10 random fault mixes, seeds 1–10.)
+- Scenarios (D-28, v1.9): one run of each of the 15 variants of the 6 mandatory scenarios (T01; T02; T04-core,
+  -lastbucket, -injected; T05-api, -db-add; T08a–c; T15a-results, -aggregate, T15b–d) with seed 1, in the demo
+  configuration, scripted, 2026-11-27 – 11-30. T04-lastbucket and the T15 variants run twice more (seeds 2–3): their
+  outcome depends on wall-clock bucket boundaries and the delivery of the TALLY event, which differ on every run (the
+  seed only changes voter order and choices, `T01/setup.py`). The aim is to show which part of the structure blocks or
+  detects each attack (Core, contract, Rule Engine rule, three-organization keys); the rules are deterministic, so
+  repeating designed faults adds no statistical value. (Before v1.9: seeds 1–3, 4–5 if time allows.) Baseline B1;
+  B2 only if the AI Audit Agent is built; B0 described qualitatively. The report states what was not run: the
+  evaluation configuration, seeds 2–10 (4–10 for T04-lastbucket and T15), and the optional scenarios.
+  (Before D-28: T01–T16 plus 10 random fault mixes, seeds 1–10.)
 - Ground-truth labels for a scenario are written by a team member who does not implement the Rule Engine or the Audit
   Agent (Seungmin or Harits), committed before the first run, and never edited after seeing results.
-- Report per baseline: number of runs, failures and their causes, and all metrics with min / median / max over seeds.
+- Report per baseline: number of runs, failures and their causes. v1.9: per variant, the blocking or detecting
+  component, rule results and label match, B1 cause vs label, and time from the fault to the decided finding;
+  precision / recall / false-positive rate and min / median / max over seeds are not computed (designed faults only),
+  and the report says so. (Before v1.9: all metrics with min / median / max over seeds.)

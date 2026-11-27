@@ -1,4 +1,4 @@
-# Design decisions (v1.8)
+# Design decisions (v1.9)
 
 > 2026-10-18 v1.0: after a supervisor review (DECISIONS VERDICT: READY TO CONFIRM) every item except D-02 and D-15 is
 > **confirmed as recommended**. Wording added at confirmation is marked **Confirmed note (v1.0)**. D-02 is delegated to
@@ -36,6 +36,10 @@
 > (ROSTER_AMEND, ELECTION_VOID) and signed finding reviews with the finalize quorum built on them are removed from
 > this version's scope; `contracts/` keeps their definitions, marked "Out of scope in this version (D-31)". D-11 and
 > D-24 noted. Team-lead decision.
+> 2026-11-27 v1.9: D-28 experiment — one run of each of the 15 variants of the mandatory scenarios (seed 1, demo
+> configuration); T04-lastbucket and the T15 variants run twice more (seeds 2–3) because their outcome depends on
+> wall-clock timing. Results per variant (which component blocks or detects each attack), no metrics over seeds.
+> Team-lead decision.
 > History: drafts v0.1–v0.18 were revised after supervisor reviews 1–17; the Korean original with the full history is
 > `decisions.ko.md`. If the two differ, this English version applies (D-19).
 
@@ -423,7 +427,11 @@
   - Web (v1.2.1): every built screen is demonstrable at M2; the approval and review screens run against the fake
     Gateway there (part B of the demo) and against the real contract from M3.
   - Experiment (test-plan): mandatory scenarios × seeds 1–3 (4–5 if time allows), demo configuration, baseline B1,
-    2026-11-27 – 11-30; labels still committed before the first run.
+    2026-11-27 – 11-30; labels still committed before the first run. (v1.9, replaces the seeds above: one run of each
+    of the 15 variants with seed 1; T04-lastbucket and the T15 variants run twice more (seeds 2–3), since their outcome
+    depends on wall-clock bucket boundaries and the delivery of the TALLY event, which differ on every run — the seed
+    only changes voter order and choices. The aim is to show which part of the structure blocks or detects each
+    attack; the rules are deterministic, so repeating designed faults adds no statistical value.)
   - D-27 measurements due 2026-11-13 instead of 11-09; D = 2 until then.
   - Milestone verdicts are PASS / CONDITIONAL / FAIL; work continues in parallel and P1 findings are fixed before the next
     run. Fallbacks (`docs/schedule.md` section 4) are fixed now and switched on by one line here when needed.

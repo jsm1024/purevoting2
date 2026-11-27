@@ -363,13 +363,15 @@ purevoting2/
 ## 11. Tests and demo
 - **Tests:** detailed steps and pass criteria for T01–T16 are in `docs/test-plan.md`. Fault scenarios live in
   `tests/scenarios/<id>/`; their ground-truth labels are committed before running.
-- **Experiment scope:** the protocol in `docs/test-plan.md` is the target; the MVP minimum is the mandatory scenarios ×
-  seeds 1–3 for B1 (and B2 if the agent exists).
+- **Experiment scope:** the protocol in `docs/test-plan.md` is the target; the MVP minimum (before v1.9) was
+  mandatory scenarios × seeds 1–3 for B1 (and B2 if the agent exists); since v1.9 (decisions D-28) one run per variant,
+  with two more runs of the timing-sensitive T04-lastbucket and T15 variants.
 - **Experiment baselines:**
   - B0: original PureVoting
   - B1: rules only
   - B2: rules + AI (free local model, only if the go was confirmed on 11-17)
-  - Metrics: FAIL precision and recall, root-cause accuracy, evidence validity, AI tokens and time (cost 0)
+  - Metrics (target; v1.9 reports per variant without precision / recall, decisions D-28):
+    FAIL precision and recall, root-cause accuracy, evidence validity, AI tokens and time (cost 0)
 - **Demo flow (draft):**
   1. Normal vote
   2. Roster change without approval (T05) → R4 FAIL

@@ -147,7 +147,7 @@ the observer org (`org_observer`, D-25 v1.1; the registry setup script's default
 **Experiment fairness.**
 - Ground-truth labels for each scenario (`tests/scenarios/<id>/expected.json`) are written and committed by Harits **before** the first run, and never edited after seeing results.
 - Baselines: B1 rules only, B2 rules + local AI agent (only if the go was confirmed on 11-17).
-- Metrics: FAIL precision / recall, root-cause accuracy, evidence validity, AI tokens and time to report; API cost is 0 (`docs/test-plan.md`).
+- Metrics (target; v1.9 reports per variant without precision / recall, decisions D-28): FAIL precision / recall, root-cause accuracy, evidence validity, AI tokens and time to report; API cost is 0 (`docs/test-plan.md`).
 
 Self-test without Core / Gateway: prism mocks of both OpenAPI files plus the fixtures in `contracts/examples/`.
 
