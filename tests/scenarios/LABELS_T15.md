@@ -17,9 +17,9 @@ keys are those of T01 (three voters), plus the TALLY keys below.
 | Variant | Fault | Rules | Non-zero keys beyond T01's R3 counts |
 |---|---|---|---|
 | T15a-results | one accepted ballot is missing from the published count and results | R3 FAIL, R5 FAIL | R3 `tally_count_mismatches` + the TALLY copies; R5 `tally_result_mismatches` |
-| T15a-aggregate | Core's aggregate omits one ballot, the shares follow that aggregate | R3 FAIL, R5 FAIL | R3 `tally_count_mismatches` + the TALLY copies; R5 `tally_share_failures` |
-| T15b | one candidate's published total is changed | R5 FAIL (R3 PASS) | the TALLY copies in R3; R5 `tally_result_mismatches` |
-| T15c | TALLY `ballot_set_root` covers a ballot with checkpoint > final | R5 FAIL (R3 PASS) | the TALLY copies in R3; R5 `tally_root_mismatches` |
+| T15a-aggregate | the three stored shares and the results are those of an aggregate that omits one ballot (Core's own aggregate is unchanged) | R3 FAIL, R5 FAIL | R3 `tally_count_mismatches` + the TALLY copies; R5 `tally_share_failures` |
+| T15b | one vote is moved from one candidate to another in the published results | R5 FAIL (R3 PASS) | the TALLY copies in R3; R5 `tally_result_mismatches` |
+| T15c | TALLY `ballot_set_root` is computed over the accepted ballots plus one extra value | R5 FAIL (R3 PASS) | the TALLY copies in R3; R5 `tally_root_mismatches` |
 | T15d | `publishTally` with final_checkpoint = F - 1 | refused by the contract, all rules PASS | none (T01 keys only) |
 
 "The TALLY copies" are `tally_final_checkpoint` (= F, non-zero because checkpoint 0 is the freeze), `tally_ballot_count`
@@ -31,25 +31,29 @@ every variant and are not listed.
 Common: exactly one TALLY_PUBLISHED at the TALLY checkpoint (otherwise R3 is INCONCLUSIVE OTHER and the R3 `tally_*`
 keys are absent); `final_checkpoint` = F; `invalid_ballots` 0, `invalid_ballot_hashes` empty, `excluded_ballots` 0;
 `result_hash` is recomputed by the injection over the fields it publishes (otherwise `tally_result_hash_mismatches` is
-also non-zero); the chain-side checks (R1, R2, R4, the other R5 keys) are untouched; the tampering is made after the
+also non-zero; it also recomputes `payload_hash`, otherwise the Gateway refuses the event with VALIDATION_ERROR
+before the contract sees it); the chain-side checks (R1, R2, R4, the other R5 keys) are untouched; the tampering is made after the
 checkpoint that commits the last ballot and does not change a view row that a committed checkpoint covers
 (`tables_mismatched` stays 0).
 
-- **T15a-results:** published `ballot_count` = N - 1 and the results total N - 1 votes (the omitted ballot's candidate
-  has one vote fewer); `ballot_set_root` is the honest one over all N accepted ballots; the shares are the honest ones
+- **T15a-results:** published `ballot_count` = N - 1 and the results total N - 1 votes (the first
+  candidate that has a vote has one vote fewer); `ballot_set_root` is the honest one over all N accepted ballots; the shares are the honest ones
   over the full aggregate of N ballots.
-- **T15a-aggregate:** Core's aggregate and the three shares are those of N - 1 ballots (so each share fails against the
-  aggregate the Rule Engine recomputes over all N); the published `ballot_count` is N - 1 and the results are the
+- **T15a-aggregate:** the three stored shares are those of the aggregate of N - 1 ballots (the first ballot by `ballot_hash` is left
+  out; Core's own aggregate is not changed), so each share fails against the aggregate the Rule Engine
+  recomputes over all N; the published `ballot_count` is N - 1 and the results are the
   decryption of that smaller aggregate; `ballot_set_root` is the honest one over all N ballots. R5 then skips the result
   check (`tally_result_mismatches` is null).
-- **T15b:** `ballot_count` = N, one candidate's published votes changed (+1, -1, or a vote moved to another candidate; the
-  key set is the same), everything else consistent; the shares are honest.
-- **T15c:** only `ballot_set_root` differs (it covers one extra ballot_hash with checkpoint > F); `ballot_count`, results
+- **T15b:** `ballot_count` = N, one vote moved from the first candidate that has a vote to the next one (any
+  change of the published votes gives the same key set), everything else consistent; the shares are honest.
+- **T15c:** only `ballot_set_root` differs (it is computed over the N accepted `ballot_hash` values plus one extra random 32-byte value, not a recorded ballot); `ballot_count`, results
   and shares are honest and consistent with the N accepted ballots. If the injection also changes the counts or the
   results, this label does not apply.
 - **T15d:** the publishTally call carries `final_checkpoint` = F - 1 and is refused: the contract reverts
   InvalidFinalCheckpoint, the Gateway answers REJECTED INVALID_STATE_TRANSITION (revert name in the detail). The election
-  stays CLOSED, no TALLY_PUBLISHED exists and no TALLY checkpoint is committed. The rules are judged at the last committed
+  stays CLOSED on the chain, no TALLY_PUBLISHED reaches the ledger (the refusal is a rejection record) and no TALLY
+  checkpoint is committed. Core keeps the election TALLIED with one TRANSITION_REJECTED alert, which the variant
+  declares as expected. The rules are judged at the last committed
   checkpoint (F), so R3 has no `tally_*` keys.
 
 ## Reasoning per variant
@@ -85,7 +89,7 @@ tally keys, so it is correct on these variants if the conditions hold.
 - T15 with the sealed-box scheme (SEALED_BOX_V1): not in the mandatory runs, the default is ElGamal.
 
 ## Open points the setup decides (the label is correct only under the conditions above)
-- T15c: the test-plan row says only R5 FAILs; whether the injection can change `ballot_set_root` without touching the
-  counts is a question for the setup.
-- T15a-aggregate: the honest trustee tool refuses a short ballot list, so the shares of N - 1 ballots need an
-  injection after the trustees decrypted, or direct database values.
+- T15c (decided by the setup): `tally_tamper.py` changes only `ballot_set_root`; counts, results and shares stay honest.
+- T15a-aggregate (decided by the setup): `tally_tamper.py` replaces the three stored shares in
+  `credential.decryption_shares` with shares over the aggregate of N - 1 ballots, in the same statement that
+  changes the outbox row.
