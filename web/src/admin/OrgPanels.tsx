@@ -170,10 +170,14 @@ export function TrusteeCard({ e, account, onSent }: { e: Election; account: Acco
       if (f.size > 64 * 1024) throw new t.Refused("기관 열쇠 파일이 아니에요 (너무 커요)");
       const { file, x } = await t.readTrusteeFile(await f.text());
       if (file.org_id !== org) throw new t.Refused(`${ORG_KO[file.org_id] ?? file.org_id} 기관의 열쇠 파일이에요. ${ORG_KO[org] ?? org} 기관 열쇠를 고르세요`);
+      // the ledger comparison needs the Gateway's read-only key: it comes with the key file (web-key.json); this card has no input for it
+      const ledgerKey = file.gateway_auditor_key || api.ledgerKey();
+      if (!ledgerKey) throw new t.Refused(`이 파일에는 원장 읽기 키가 없어요. ${org}.web-key.json 파일을 고르세요`);
       secret.current = x;
       keyFile.current = file;
+      api.setLedgerKey(ledgerKey);
+      setKey(ledgerKey);
       setFileName(f.name);
-      if (file.gateway_auditor_key) { api.setLedgerKey(file.gateway_auditor_key); setKey(file.gateway_auditor_key); }
     } catch (x) {
       setErr(reason(x, "파일을 읽지 못했어요"));
     }
@@ -246,25 +250,12 @@ export function TrusteeCard({ e, account, onSent }: { e: Election; account: Acco
               <span className="font-bold">① 기관 열쇠 파일 고르기</span>
               <label className="mt-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line p-3 hover:border-primary">
                 <span className="rounded-lg bg-primary-soft px-3 py-1.5 text-[13px] font-bold text-primary">파일 선택</span>
-                <span className="truncate text-[13px] text-ink-3">{fileName ? `✓ ${fileName}` : `${org}.secret.json`}</span>
+                <span className="truncate text-[13px] text-ink-3">{fileName ? `✓ ${fileName}` : `${org}.web-key.json`}</span>
                 <input type="file" accept=".json,application/json" className="hidden" onChange={pick} />
               </label>
             </li>
             <li>
-              <span className="font-bold">② 원장 읽기 키</span>
-              <div className="mt-2">
-                {key ? (
-                  <p className="flex items-center justify-between rounded-xl bg-surface p-3 text-[13px] text-ink-3">
-                    ✓ 이 탭에 저장됨
-                    <button className="font-semibold hover:text-ink" onClick={() => { api.setLedgerKey(""); setKey(""); }}>바꾸기</button>
-                  </p>
-                ) : (
-                  <LedgerKeyInput onSet={setKey} />
-                )}
-              </div>
-            </li>
-            <li>
-              <span className="font-bold">③ 검사 → 제출</span>
+              <span className="font-bold">② 검사 → 제출</span>
               <div className="mt-2 flex gap-2">
                 <Button variant="secondary" className="flex-1" disabled={!fileName || !key || phase.at === "checking" || phase.at === "sending"} onClick={check}>
                   {phase.at === "checking" ? <><Spinner className="h-4 w-4" /> 검사 중…</> : "검사하기"}

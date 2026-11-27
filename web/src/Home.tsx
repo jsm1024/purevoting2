@@ -28,10 +28,23 @@ export default function Home() {
           <div className="text-[17px] font-bold">영수증 확인</div>
           <div className="mt-1 text-[14px] text-ink-3">내 표가 블록체인에 기록됐는지 확인</div>
         </Link>
-        <Link className={card} to="/admin">
-          <div className="text-[17px] font-bold">선거 관리자</div>
+        <Link className={card} to="/admin/login?org=org_commission">
+          <div className="text-[17px] font-bold">선관위 (선거 관리자)</div>
           <div className="mt-1 text-[14px] text-ink-3">선거 생성, 명단, 개표, 검사 결과</div>
         </Link>
+        {/* D-30: the other two organizations sign in with their own accounts; after the close each one checks the
+            ballots and sends its decryption share, and the tally opens only once all three shares are in */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link className={`${card} !p-4`} to="/admin/login?org=org_observer">
+            <div className="text-[16px] font-bold">참관 기관</div>
+            <div className="mt-1 text-[13px] text-ink-3">검사 결과 확인, 마감 뒤 개표 승인(복호화 조각)</div>
+          </Link>
+          <Link className={`${card} !p-4`} to="/admin/login?org=org_neutral">
+            <div className="text-[16px] font-bold">중립 기관</div>
+            <div className="mt-1 text-[13px] text-ink-3">노드·원장 확인, 마감 뒤 개표 승인(복호화 조각)</div>
+          </Link>
+        </div>
+        <p className="px-1 text-[12px] text-ink-4">개표는 선관위·참관·중립 세 기관이 모두 승인해야 열려요.</p>
       </div>
     </div>
   );
