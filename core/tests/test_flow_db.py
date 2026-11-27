@@ -75,7 +75,8 @@ def deliver_until_idle(*eids):
 def outbox_rows(eid):
     with db.get_engine().connect() as conn:
         return [dict(r) for r in conn.execute(text("SELECT event_id, kind, seq, status, event FROM credential.outbox "
-                                                   "WHERE election_id = :e"), {"e": eid}).mappings()]
+                                                   "WHERE election_id = :e ORDER BY seq NULLS LAST, event_id"),
+                                                   {"e": eid}).mappings()]
 
 
 def test_week2_path(env):
